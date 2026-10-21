@@ -191,11 +191,11 @@ def test_llm():
                f"not offered; set LLM_MODEL to one of: {', '.join(models[:15])}")
         return
     reply = check(f"LLM: {config.LLM_MODEL} responds",
-                  lambda: llm.complete("Reply with: ok", max_tokens=16))
+                  lambda: llm.complete("Reply with: ok", max_tokens=512))
     if reply is not None:
         info("reply", reply.strip()[:60])
     data = check("LLM: JSON mode", lambda: json.loads(llm.complete(
-        'Return a JSON object {"ok": true}.', max_tokens=32, json_mode=True)))
+        'Return a JSON object {"ok": true}.', max_tokens=512, json_mode=True)))
     if data is not None:
         info("json", data)
 

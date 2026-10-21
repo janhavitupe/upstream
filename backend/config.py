@@ -25,7 +25,7 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 # rule-based text without a key)
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
-LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
 
 # App
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
