@@ -17,7 +17,7 @@ This is a **starter skeleton**. The PayPal integrations and the API routes exist
 | 2. Get paid (invoices) | 2 | Create + send (no approval step), list open, remind, cancel | Chat input, voice-matched reminders, overdue scheduler |
 | 3. Fair retainers (subscriptions) | 3 | Product → plan → subscription, pause/resume | Pre-renewal heads-up job |
 | 4. Pay the bill, not the person | 4 | Donation order paid directly to the hospital account + capture | Bill upload and AI verification |
-| Webhooks | all | Receiver + signature verification + event log | Persisting state |
+| Webhooks + storage | all | Receiver + signature verification; SQLite (`data/upstream.db`) stores analyses, payout batches/items and events | Invoice and chase state (Phase 2) |
 
 ## Run it (VS Code)
 
@@ -41,7 +41,8 @@ This is a **starter skeleton**. The PayPal integrations and the API routes exist
 backend/
   main.py              API routes for all four modules
   config.py            settings from .env
-  webhooks.py          PayPal webhook receiver + event log
+  webhooks.py          PayPal webhook receiver; payout events update stored status
+  db.py                SQLite: analyses, payout batches + items, webhook events
   paypal/              client (OAuth), payouts, invoices, subscriptions, orders, webhooks
   oss/                 github client, manifest parsing, health signals, scoring, analyzer
   agent/explain.py     LLM explanations for each allocation (optional)

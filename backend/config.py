@@ -31,6 +31,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
 INVOICER_NAME = os.getenv("INVOICER_NAME", "Upstream Studio")
 OSS_MONTHLY_CAP = float(os.getenv("OSS_MONTHLY_CAP", "500"))
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")
 
 # Sandbox demo recipients
 DEMO_MAINTAINER_EMAILS = _list("DEMO_MAINTAINER_EMAILS")

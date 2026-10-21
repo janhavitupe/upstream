@@ -1,15 +1,12 @@
-"""PayPal webhook receiver. Events are kept in memory and shown on the dashboard."""
+"""PayPal webhook receiver. Events are stored in SQLite; payout events also update payout status."""
 from __future__ import annotations
-
-from collections import deque
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 
+from backend import db
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
-EVENTS: deque = deque(maxlen=200)
 
 MESSAGES = {
     "PAYMENT.PAYOUTSBATCH.SUCCESS": "OSS payout batch completed",
@@ -26,6 +23,19 @@ MESSAGES = {
 }
 
 
+def _apply_payout_event(etype: str, resource: dict):
+    if etype.startswith("PAYMENT.PAYOUTSBATCH."):
+        header = resource.get("batch_header") or {}
+        if header.get("payout_batch_id"):
+            db.update_batch_status(header["payout_batch_id"], header.get("batch_status"))
+    elif etype.startswith("PAYMENT.PAYOUTS-ITEM."):
+        sender_item_id = (resource.get("payout_item") or {}).get("sender_item_id")
+        if resource.get("payout_batch_id") and sender_item_id:
+            db.update_item(resource["payout_batch_id"], sender_item_id,
+                           status=resource.get("transaction_status"),
+                           payout_item_id=resource.get("payout_item_id"))
+
+
 @router.post("/webhooks/paypal", tags=["webhooks"])
 async def paypal_webhook(request: Request):
     event = await request.json()
@@ -35,17 +45,14 @@ async def paypal_webhook(request: Request):
         print(f"[webhook] verification error: {e}")
         verified = False
     etype = event.get("event_type", "UNKNOWN")
-    EVENTS.appendleft({
-        "received_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "event_type": etype,
-        "resource_id": (event.get("resource") or {}).get("id"),
-        "message": MESSAGES.get(etype, event.get("summary", "")),
-        "verified": verified,
-    })
+    db.save_event(event, message=MESSAGES.get(etype, event.get("summary", "")), verified=verified)
+    # Only let verified events change state; unverified ones are logged for inspection
+    if verified is not False:
+        _apply_payout_event(etype, event.get("resource") or {})
     print(f"[webhook] {etype} verified={verified}")
     return {"ok": True}
 
 
 @router.get("/api/events", tags=["webhooks"])
 def list_events():
-    return list(EVENTS)
+    return db.list_events()

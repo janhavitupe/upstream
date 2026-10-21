@@ -5,22 +5,32 @@ Then: http://localhost:8000 (dashboard) and http://localhost:8000/docs (API expl
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from backend import config
+from backend import config, db
 from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts, subscriptions
 from backend.paypal.client import PayPalError
 from backend.webhooks import router as webhook_router
 
+
+@asynccontextmanager
+async def lifespan(_):
+    db.init()
+    yield
+
+
 app = FastAPI(
     title="Upstream",
     version="0.1.0",
     description="AI money agent for independent developers, built on PayPal. "
                 "Money in runs on its own; money out waits for your yes.",
+    lifespan=lifespan,
 )
 app.include_router(webhook_router)
 
@@ -71,21 +81,32 @@ class AnalyzeIn(BaseModel):
 @app.post("/api/oss/analyze", tags=["1 · OSS payouts"])
 def oss_analyze(body: AnalyzeIn):
     try:
-        return analyze_repo(body.repo, body.budget, body.max_deps)
+        result = analyze_repo(body.repo, body.budget, body.max_deps)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    return {"analysis_id": db.save_analysis(result), **result}
 
 
-class PayoutLine(BaseModel):
-    package: str
-    email: str
-    amount: float = Field(..., gt=0)
-    note: str | None = None
+@app.get("/api/oss/analyses", tags=["1 · OSS payouts"])
+def oss_analyses():
+    return db.list_analyses()
+
+
+@app.get("/api/oss/analyses/{analysis_id}", tags=["1 · OSS payouts"])
+def oss_analysis(analysis_id: str):
+    analysis = db.get_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(404, "Analysis not found.")
+    return {**analysis, "payout": db.batch_for_analysis(analysis_id)}
 
 
 class PayoutIn(BaseModel):
-    lines: list[PayoutLine]
+    analysis_id: str
     approved: bool = False
+    emails: dict[str, str] = Field(
+        default_factory=dict,
+        description="Optional package -> PayPal email overrides. Amounts always come from "
+                    "the saved analysis.")
 
 
 @app.post("/api/oss/payout", tags=["1 · OSS payouts"])
@@ -93,32 +114,61 @@ def oss_payout(body: PayoutIn):
     if not body.approved:
         raise HTTPException(400, "Payouts move money out, so they need explicit approval "
                                  "(approved: true).")
-    if not body.lines:
+    analysis = db.get_analysis(body.analysis_id)
+    if not analysis:
+        raise HTTPException(404, "Analysis not found. Run /api/oss/analyze first.")
+    existing = db.batch_for_analysis(body.analysis_id)
+    if existing:
+        raise HTTPException(409, f"This analysis was already paid in batch "
+                                 f"{existing['batch_id']}.")
+    lines = [d for d in analysis["dependencies"] if d.get("amount", 0) > 0]
+    if not lines:
         raise HTTPException(400, "Nothing to pay.")
-    total = round(sum(l.amount for l in body.lines), 2)
+    total = round(sum(d["amount"] for d in lines), 2)
     if total > config.OSS_MONTHLY_CAP:
         raise HTTPException(400, f"Total ${total:.2f} exceeds the monthly cap of "
                                  f"${config.OSS_MONTHLY_CAP:.2f} (OSS_MONTHLY_CAP).")
-    missing = [l.package for l in body.lines if "@" not in l.email]
+    items = [{"email": body.emails.get(d["package"]) or d.get("suggested_email", ""),
+              "amount": d["amount"],
+              "note": d.get("explanation") or f"Thank you for maintaining {d['package']}.",
+              "item_id": d["package"][:63]} for d in lines]
+    missing = [i["item_id"] for i in items if "@" not in i["email"]]
     if missing:
         raise HTTPException(400, f"Missing PayPal email for: {', '.join(missing)}")
-    items = [{"email": l.email, "amount": l.amount,
-              "note": l.note or f"Thank you for maintaining {l.package}.",
-              "item_id": f"{l.package}"[:63]} for l in body.lines]
-    resp = payouts.create_batch(items)
-    return {"total": total, "batch": resp.get("batch_header", resp)}
+    # Deterministic id: PayPal rejects a reused sender_batch_id, so a double approval
+    # can't pay twice even if two requests race past the check above
+    sender_batch_id = f"upstream-{body.analysis_id}"
+    resp = payouts.create_batch(items, sender_batch_id=sender_batch_id)
+    header = resp.get("batch_header", {})
+    db.save_batch(header["payout_batch_id"], body.analysis_id, sender_batch_id,
+                  header.get("batch_status"), items)
+    return {"total": total, "batch": header}
 
 
 @app.get("/api/oss/payout/{batch_id}", tags=["1 · OSS payouts"])
 def oss_payout_status(batch_id: str):
+    """Refreshes status from PayPal (the fallback when webhooks are slow or not set up)."""
     data = payouts.get_batch(batch_id)
+    header = data.get("batch_header", {})
+    if db.get_batch(batch_id):
+        db.update_batch_status(batch_id, header.get("batch_status"))
+        for i in data.get("items", []):
+            sender_item_id = (i.get("payout_item") or {}).get("sender_item_id")
+            if sender_item_id:
+                db.update_item(batch_id, sender_item_id, status=i.get("transaction_status"),
+                               payout_item_id=i.get("payout_item_id"))
+    stored = db.get_batch(batch_id)
+    if stored:
+        return stored
+    # A batch created outside Upstream (e.g. by the smoke test): show PayPal's view only
     return {
-        "batch": data.get("batch_header", {}),
+        "batch_id": batch_id, "status": header.get("batch_status"),
         "items": [{
-            "receiver": (i.get("payout_item") or {}).get("receiver"),
+            "sender_item_id": (i.get("payout_item") or {}).get("sender_item_id"),
+            "email": (i.get("payout_item") or {}).get("receiver"),
             "amount": ((i.get("payout_item") or {}).get("amount") or {}).get("value"),
             "status": i.get("transaction_status"),
-            "item_id": i.get("payout_item_id"),
+            "payout_item_id": i.get("payout_item_id"),
         } for i in data.get("items", [])],
     }
 

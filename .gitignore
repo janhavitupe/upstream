@@ -11,3 +11,7 @@ venv/
 # Editors / OS
 .DS_Store
 .idea/
+
+# Local database
+data/
+*.db
