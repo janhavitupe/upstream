@@ -1,0 +1,39 @@
+# Render Blueprint: render.com -> New -> Blueprint -> pick this repo.
+# Secrets are marked sync: false, so Render asks for them once instead of reading them from git.
+services:
+  - type: web
+    name: upstream
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_BASE
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: openai/gpt-oss-120b
+      - key: INVOICER_NAME
+        value: Upstream Studio
+      - key: OSS_MONTHLY_CAP
+        value: "500"
+      - key: DEMO_MAINTAINER_EMAILS
+        value: maintainer-a@personal.example.com,maintainer-b@personal.example.com,maintainer-c@personal.example.com
+      - key: DEMO_CLIENT_EMAIL
+        value: acme-client@personal.example.com
+      - key: DEMO_HOSPITAL_EMAIL
+        value: city-hospital@business.example.com

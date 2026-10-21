@@ -28,7 +28,10 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
 
 # App
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
+# Render sets RENDER and RENDER_EXTERNAL_URL on every deploy
+IS_PUBLIC_DEPLOY = bool(os.getenv("RENDER"))
+APP_BASE_URL = (os.getenv("APP_BASE_URL", "").strip() or os.getenv("RENDER_EXTERNAL_URL", "")
+                or "http://localhost:8000").rstrip("/")
 INVOICER_NAME = os.getenv("INVOICER_NAME", "Upstream Studio")
 OSS_MONTHLY_CAP = float(os.getenv("OSS_MONTHLY_CAP", "500"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import db
+from backend import config, db
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
@@ -46,8 +46,9 @@ async def paypal_webhook(request: Request):
         verified = False
     etype = event.get("event_type", "UNKNOWN")
     db.save_event(event, message=MESSAGES.get(etype, event.get("summary", "")), verified=verified)
-    # Only let verified events change state; unverified ones are logged for inspection
-    if verified is not False:
+    # Only verified events change state. Locally, with no PAYPAL_WEBHOOK_ID (verified is None),
+    # unverified events are allowed for testing; on a public deploy anyone could send them.
+    if verified or (verified is None and not config.IS_PUBLIC_DEPLOY):
         _apply_payout_event(etype, event.get("resource") or {})
     print(f"[webhook] {etype} verified={verified}")
     return {"ok": True}
