@@ -84,6 +84,10 @@ def oss_analyze(body: AnalyzeIn):
         result = analyze_repo(body.repo, body.budget, body.max_deps)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    result["revision"] = 1
+    result["history"] = [{"revision": 1, "at": db.now(), "by": result["explained_by"],
+                          "note": "Rule-based split" + (" with AI review"
+                                                        if result["explained_by"] == "llm" else "")}]
     return {"analysis_id": db.save_analysis(result), **result}
 
 
@@ -100,8 +104,64 @@ def oss_analysis(analysis_id: str):
     return {**analysis, "payout": db.batch_for_analysis(analysis_id)}
 
 
+class AllocationIn(BaseModel):
+    revision: int = Field(..., description="The revision you are editing (from the analysis).")
+    amounts: dict[str, float] = Field(..., examples=[{"jinja2": 30, "click": 5}],
+                                      description="package -> new amount in USD. Packages "
+                                                  "left out keep their current amount.")
+
+
+@app.put("/api/oss/analyses/{analysis_id}/allocation", tags=["1 · OSS payouts"])
+def oss_edit_allocation(analysis_id: str, body: AllocationIn):
+    analysis = db.get_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(404, "Analysis not found.")
+    if db.batch_for_analysis(analysis_id):
+        raise HTTPException(409, "This analysis was already paid; run a new analysis.")
+    if body.revision != analysis.get("revision", 1):
+        raise HTTPException(409, f"Revision {body.revision} is out of date; the latest is "
+                                 f"{analysis.get('revision', 1)}. Reload and try again.")
+    deps = {d["package"]: d for d in analysis["dependencies"]}
+    unknown = [p for p in body.amounts if p not in deps]
+    if unknown:
+        raise HTTPException(400, f"Not in this analysis: {', '.join(unknown)}")
+    unfundable = [p for p, a in body.amounts.items() if a > 0 and not deps[p].get("signals")]
+    if unfundable:
+        raise HTTPException(400, f"No source repository found, so these can't be paid: "
+                                 f"{', '.join(unfundable)}")
+    if any(a < 0 for a in body.amounts.values()):
+        raise HTTPException(400, "Amounts can't be negative.")
+    new = {p: round(d["amount"], 2) for p, d in deps.items()}
+    new.update({p: round(a, 2) for p, a in body.amounts.items()})
+    total = round(sum(new.values()), 2)
+    if total <= 0:
+        raise HTTPException(400, "The total must be more than $0.")
+    if total > config.OSS_MONTHLY_CAP:
+        raise HTTPException(400, f"Total ${total:.2f} exceeds the monthly cap of "
+                                 f"${config.OSS_MONTHLY_CAP:.2f} (OSS_MONTHLY_CAP).")
+
+    changes = {p: [deps[p]["amount"], a] for p, a in new.items() if a != deps[p]["amount"]}
+    demo = config.DEMO_MAINTAINER_EMAILS
+    for i, (p, d) in enumerate(deps.items()):
+        if p in changes:
+            d["user_edited"] = True
+        d["amount"] = new[p]
+        d["percent"] = round(100 * new[p] / total, 1)
+        if d["amount"] > 0 and not d.get("suggested_email") and demo:
+            d["suggested_email"] = demo[i % len(demo)]
+    analysis["dependencies"].sort(key=lambda r: (-r["amount"], r["package"]))
+    analysis["total"] = total
+    analysis["revision"] = analysis.get("revision", 1) + 1
+    analysis.setdefault("history", []).append(
+        {"revision": analysis["revision"], "at": db.now(), "by": "user", "changes": changes})
+    db.update_analysis(analysis_id, analysis)
+    return {**analysis, "payout": None}
+
+
 class PayoutIn(BaseModel):
     analysis_id: str
+    revision: int = Field(..., description="The revision you reviewed. Approval pays exactly "
+                                           "this version.")
     approved: bool = False
     emails: dict[str, str] = Field(
         default_factory=dict,
@@ -117,6 +177,9 @@ def oss_payout(body: PayoutIn):
     analysis = db.get_analysis(body.analysis_id)
     if not analysis:
         raise HTTPException(404, "Analysis not found. Run /api/oss/analyze first.")
+    if body.revision != analysis.get("revision", 1):
+        raise HTTPException(409, f"You approved revision {body.revision}, but the latest is "
+                                 f"{analysis.get('revision', 1)}. Review it and approve again.")
     existing = db.batch_for_analysis(body.analysis_id)
     if existing:
         raise HTTPException(409, f"This analysis was already paid in batch "

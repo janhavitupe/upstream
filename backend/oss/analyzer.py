@@ -4,7 +4,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 from backend import config
-from backend.agent.explain import explain_allocations
+from backend.agent.explain import MAX_ADJUST_POINTS, review_allocations
 
 from . import deps as deps_mod
 from . import github, scoring, signals
@@ -95,9 +95,11 @@ def analyze_repo(repo_ref: str, budget: float, max_deps: int = 10) -> dict:
 
     rows = scoring.score_and_allocate(rows, budget)
 
-    llm = explain_allocations(rows, budget)
+    review = review_allocations(rows, budget)
+    if review:
+        rows = scoring.apply_ai_adjustments(rows, budget, review, MAX_ADJUST_POINTS)
     for r in rows:
-        r["explanation"] = ((llm or {}).get(r["package"])
+        r["explanation"] = ((review or {}).get(r["package"], {}).get("explanation")
                             or "; ".join(r.get("reasons", [])).capitalize()
                             or r.get("error", ""))
 
@@ -111,7 +113,8 @@ def analyze_repo(repo_ref: str, budget: float, max_deps: int = 10) -> dict:
         "ecosystem": ecosystem,
         "files_scanned": files_scanned,
         "budget": budget,
-        "explained_by": "llm" if llm else "rules",
+        "explained_by": "llm" if review else "rules",
+        "ai_adjust_limit_points": MAX_ADJUST_POINTS if review else 0,
         "dependencies": rows,
         "warnings": warnings,
     }

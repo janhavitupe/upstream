@@ -92,6 +92,12 @@ def get_analysis(analysis_id: str) -> dict | None:
     return {**json.loads(row["result"]), "analysis_id": row["id"], "created_at": row["created_at"]}
 
 
+def update_analysis(analysis_id: str, result: dict):
+    result = {k: v for k, v in result.items() if k not in ("analysis_id", "created_at")}
+    with connect() as c:
+        c.execute("UPDATE analyses SET result = ? WHERE id = ?", (json.dumps(result), analysis_id))
+
+
 def list_analyses(limit: int = 20) -> list[dict]:
     with connect() as c:
         rows = c.execute("SELECT a.id, a.repo, a.budget, a.created_at, b.batch_id, b.status "
