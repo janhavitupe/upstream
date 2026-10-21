@@ -53,7 +53,7 @@ docs/proposal.md       full project proposal
 Payouts · Invoicing v2 · Catalog Products + Subscriptions · Orders v2 · Webhooks (+ signature verification). All in the sandbox (`api-m.sandbox.paypal.com`).
 
 ## AI tools used
-- **Claude (Anthropic API)**: writes a plain-language justification for every funding allocation, using only the facts the scoring step produced. Optional; falls back to rule-based text.
+- **Llama 3.3 70B on Groq** (any OpenAI-compatible API, set in `.env`): writes a plain-language justification for every funding allocation, using only the facts the scoring step produced. Optional; falls back to rule-based text.
 - Planned: chat intent parsing for invoices and retainers, voice-matched reminder notes, vision-based bill verification.
 
 ## Webhooks (optional)

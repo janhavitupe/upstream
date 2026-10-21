@@ -21,9 +21,11 @@ PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID", "").strip()
 # GitHub (optional token raises the rate limit from 60 to 5,000 requests/hour)
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 
-# LLM (optional: explanations fall back to rule-based text without a key)
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5").strip()
+# LLM: any OpenAI-compatible API, Groq by default (optional: explanations fall back to
+# rule-based text without a key)
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip()
 
 # App
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -38,3 +40,7 @@ DEMO_HOSPITAL_EMAIL = os.getenv("DEMO_HOSPITAL_EMAIL", "")
 
 def paypal_configured() -> bool:
     return bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)
+
+
+def llm_configured() -> bool:
+    return bool(LLM_API_KEY)

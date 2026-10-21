@@ -1,146 +1,241 @@
 """
-Upstream: PayPal sandbox smoke test.
-Checks that OAuth, Payouts, Invoicing, Subscriptions (Catalog) and Orders all work.
+Upstream smoke test: checks every external API the app depends on, through the
+same backend code the API routes use.
 
-Setup:
-    pip install requests python-dotenv
-    Create a .env file in the project root (copy .env.example):
-        PAYPAL_CLIENT_ID=...
-        PAYPAL_CLIENT_SECRET=...
-        PAYPAL_BASE=https://api-m.sandbox.paypal.com
-Run:
-    python scripts/smoke_test.py
+    python scripts/smoke_test.py                 # everything
+    python scripts/smoke_test.py payouts orders  # only some sections
+
+Sections: config, oauth, payouts, invoices, subscriptions, orders, github, llm
+PayPal sections need PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET in .env (sandbox only).
+Exit code is 0 when nothing failed (skipped checks don't count as failures).
 """
-import os
+from __future__ import annotations
+
+import json
+import sys
 import uuid
-from datetime import date, timedelta
 from pathlib import Path
 
-import requests
-from dotenv import load_dotenv
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-BASE = os.getenv("PAYPAL_BASE", "https://api-m.sandbox.paypal.com")
+from backend import config  # noqa: E402
+from backend.agent import llm  # noqa: E402
+from backend.oss import github, signals  # noqa: E402
+from backend.paypal import invoices, orders, payouts, subscriptions  # noqa: E402
+from backend.paypal.client import PayPalError, paypal  # noqa: E402
 
-CLIENT = "acme-client@personal.example.com"
-MAINTAINERS = [
-    "maintainer-a@personal.example.com",
-    "maintainer-b@personal.example.com",
-    "maintainer-c@personal.example.com",
-]
-HOSPITAL = "city-hospital@business.example.com"
+RESULTS = {"PASS": 0, "FAIL": 0, "SKIP": 0}
 
 
-def get_token():
-    r = requests.post(
-        f"{BASE}/v1/oauth2/token",
-        auth=(os.environ["PAYPAL_CLIENT_ID"], os.environ["PAYPAL_CLIENT_SECRET"]),
-        data={"grant_type": "client_credentials"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()["access_token"]
+def report(status: str, name: str, detail: str = ""):
+    RESULTS[status] += 1
+    print(f"[{status}] {name}" + (f": {detail}" if detail else ""))
 
 
-def report(name, r, ok_codes=(200, 201, 202, 204)):
-    ok = r.status_code in ok_codes
-    print(f"[{'PASS' if ok else 'FAIL'}] {name}: HTTP {r.status_code}")
-    if not ok:
-        print("       ", r.text[:500])
-    return ok
+def check(name: str, fn):
+    """Run one check; returns its result, or None if it failed."""
+    try:
+        result = fn()
+    except PayPalError as e:
+        report("FAIL", name, f"HTTP {e.status} {str(e.body)[:400]}")
+        return None
+    except Exception as e:
+        report("FAIL", name, f"{type(e).__name__}: {str(e)[:400]}")
+        return None
+    report("PASS", name)
+    return result
 
 
-def test_payouts(h):
-    body = {
-        "sender_batch_header": {
-            "sender_batch_id": f"smoke-{uuid.uuid4().hex[:12]}",
-            "email_subject": "Thanks for your open-source work!",
-            "email_message": "Upstream smoke test payout.",
-        },
-        "items": [
-            {
-                "recipient_type": "EMAIL",
-                "receiver": email,
-                "amount": {"value": "5.00", "currency": "USD"},
-                "note": "Upstream test",
-                "sender_item_id": f"item-{i}",
-            }
-            for i, email in enumerate(MAINTAINERS)
-        ],
-    }
-    r = requests.post(f"{BASE}/v1/payments/payouts", headers=h, json=body, timeout=30)
-    if report("Payouts: create batch", r):
-        batch_id = r.json()["batch_header"]["payout_batch_id"]
-        r2 = requests.get(f"{BASE}/v1/payments/payouts/{batch_id}", headers=h, timeout=30)
-        if report("Payouts: batch status", r2):
-            print("        batch_status =", r2.json()["batch_header"]["batch_status"])
+def info(label: str, value):
+    print(f"        {label} = {value}")
 
 
-def test_invoicing(h):
-    body = {
-        "detail": {"currency_code": "USD", "payment_term": {"term_type": "DUE_ON_DATE_SPECIFIED",
-                                            "due_date": (date.today() + timedelta(days=14)).isoformat()},
-                   "note": "Upstream smoke test invoice"},
-        "invoicer": {"name": {"given_name": "Upstream", "surname": "Studio"}},
-        "primary_recipients": [{"billing_info": {"email_address": CLIENT}}],
-        "items": [{
-            "name": "API integration",
-            "quantity": "1",
-            "unit_amount": {"currency_code": "USD", "value": "500.00"},
-        }],
-    }
-    r = requests.post(f"{BASE}/v2/invoicing/invoices", headers=h, json=body, timeout=30)
-    if report("Invoicing: create draft", r):
-        inv_id = r.json()["href"].rstrip("/").split("/")[-1]
-        r2 = requests.post(f"{BASE}/v2/invoicing/invoices/{inv_id}/send",
-                           headers=h, json={"send_to_invoicer": True}, timeout=30)
-        report("Invoicing: send", r2)
-        print("        invoice_id =", inv_id)
+# ---------- sections ----------
+
+def test_config():
+    if "sandbox" not in config.PAYPAL_BASE:
+        report("FAIL", "Config: PAYPAL_BASE is sandbox", config.PAYPAL_BASE)
+    else:
+        report("PASS", "Config: PAYPAL_BASE is sandbox")
+    for label, value in [("DEMO_MAINTAINER_EMAILS", config.DEMO_MAINTAINER_EMAILS),
+                         ("DEMO_CLIENT_EMAIL", config.DEMO_CLIENT_EMAIL),
+                         ("DEMO_HOSPITAL_EMAIL", config.DEMO_HOSPITAL_EMAIL)]:
+        if value:
+            report("PASS", f"Config: {label} set")
+        else:
+            report("SKIP", f"Config: {label}", "not set; dependent checks will be skipped")
+    if not config.PAYPAL_WEBHOOK_ID:
+        report("SKIP", "Config: PAYPAL_WEBHOOK_ID", "webhook signatures won't be verified")
 
 
-def test_subscriptions(h):
-    r = requests.post(f"{BASE}/v1/catalogs/products", headers=h,
-                      json={"name": "Monthly retainer", "type": "SERVICE"}, timeout=30)
-    if report("Subscriptions: create product", r):
-        product_id = r.json()["id"]
-        plan = {
-            "product_id": product_id,
-            "name": "Retainer $300/month",
-            "billing_cycles": [{
-                "frequency": {"interval_unit": "MONTH", "interval_count": 1},
-                "tenure_type": "REGULAR",
-                "sequence": 1,
-                "total_cycles": 0,
-                "pricing_scheme": {"fixed_price": {"value": "300", "currency_code": "USD"}},
-            }],
-            "payment_preferences": {"auto_bill_outstanding": True},
-        }
-        r2 = requests.post(f"{BASE}/v1/billing/plans", headers=h, json=plan, timeout=30)
-        if report("Subscriptions: create plan", r2):
-            print("        plan_id =", r2.json()["id"])
+def test_oauth():
+    token = check("OAuth: access token", paypal.token)
+    return token is not None
 
 
-def test_orders(h):
-    body = {
-        "intent": "CAPTURE",
-        "purchase_units": [{
-            "amount": {"currency_code": "USD", "value": "20.00"},
-            "payee": {"email_address": HOSPITAL},
-            "description": "Upstream smoke test donation",
-        }],
-    }
-    r = requests.post(f"{BASE}/v2/checkout/orders", headers=h, json=body, timeout=30)
-    if report("Orders: create (payee = hospital)", r):
-        approve = next(l["href"] for l in r.json()["links"] if l["rel"] in ("approve", "payer-action"))
-        print("        donor approve link =", approve)
+def test_payouts():
+    if not config.DEMO_MAINTAINER_EMAILS:
+        report("SKIP", "Payouts", "DEMO_MAINTAINER_EMAILS not set")
+        return
+    items = [{"email": e, "amount": 1.00, "note": "Upstream smoke test",
+              "item_id": f"smoke-{i}"} for i, e in enumerate(config.DEMO_MAINTAINER_EMAILS)]
+    resp = check("Payouts: create batch", lambda: payouts.create_batch(
+        items, sender_batch_id=f"smoke-{uuid.uuid4().hex[:12]}"))
+    if not resp:
+        return
+    batch_id = resp["batch_header"]["payout_batch_id"]
+    info("payout_batch_id", batch_id)
+    batch = check("Payouts: batch status", lambda: payouts.get_batch(batch_id))
+    if batch:
+        info("batch_status", batch["batch_header"]["batch_status"])
+        first = (batch.get("items") or [{}])[0].get("payout_item_id")
+        if first:
+            item = check("Payouts: item status", lambda: payouts.get_item(first))
+            if item:
+                info("first item", item.get("transaction_status"))
+
+
+def test_invoices():
+    if not config.DEMO_CLIENT_EMAIL:
+        report("SKIP", "Invoices", "DEMO_CLIENT_EMAIL not set")
+        return
+    inv = check("Invoices: create + send", lambda: invoices.create_and_send(
+        config.DEMO_CLIENT_EMAIL,
+        [{"name": "Smoke test: API integration", "quantity": 1, "unit_price": 1.00}],
+        due_in_days=14, note="Upstream smoke test. Safe to ignore."))
+    if not inv:
+        return
+    simple = invoices.simplify(inv)
+    info("invoice", f"{simple['id']} ({simple['status']}, due {simple['due_date']})")
+    check("Invoices: remind", lambda: invoices.remind(
+        simple["id"], "Smoke test reminder. Safe to ignore."))
+    found = check("Invoices: search open", invoices.list_open)
+    if found is not None:
+        info("open invoices", len(found))
+    check("Invoices: cancel (cleanup)", lambda: invoices.cancel(simple["id"]))
+
+
+def test_subscriptions():
+    product = check("Subscriptions: create product",
+                    lambda: subscriptions.create_product("Smoke test retainer"))
+    if not product:
+        return
+    plan = check("Subscriptions: create plan", lambda: subscriptions.create_plan(
+        product["id"], "Smoke test retainer: $1.00/month", 1.00))
+    if not plan:
+        return
+    info("plan_id", plan["id"])
+    sub = check("Subscriptions: create subscription", lambda: subscriptions.create_subscription(
+        plan["id"], config.DEMO_CLIENT_EMAIL or None))
+    if not sub:
+        return
+    info("subscription", f"{sub.get('id')} ({sub.get('status')})")
+    if not subscriptions.approve_link(sub):
+        report("FAIL", "Subscriptions: client approval link", "missing from response")
+    else:
+        report("PASS", "Subscriptions: client approval link")
+    fetched = check("Subscriptions: get", lambda: subscriptions.get(sub["id"]))
+    if fetched:
+        info("status", fetched.get("status"))
+    # Pause/resume/cancel need an ACTIVE subscription, i.e. a client who approved it in the
+    # browser. PayPal returns 404 for cancel on APPROVAL_PENDING; those expire on their own.
+    if (fetched or sub).get("status") == "APPROVAL_PENDING":
+        report("SKIP", "Subscriptions: cancel (cleanup)", "not approved yet; it will expire")
+    else:
+        check("Subscriptions: cancel (cleanup)", lambda: subscriptions.cancel(sub["id"]))
+
+
+def test_orders():
+    if not config.DEMO_HOSPITAL_EMAIL:
+        report("SKIP", "Orders", "DEMO_HOSPITAL_EMAIL not set")
+        return
+    order = check("Orders: create donation (payee = hospital)", lambda: orders.create_donation(
+        1.00, config.DEMO_HOSPITAL_EMAIL, "Upstream smoke test donation"))
+    if not order:
+        return
+    info("order", f"{order.get('id')} ({order.get('status')})")
+    link = orders.approve_link(order)
+    if link:
+        report("PASS", "Orders: donor approval link")
+        info("approve", link)
+    else:
+        report("FAIL", "Orders: donor approval link", "missing from response")
+
+
+def test_github():
+    repo = check("GitHub: repo info", lambda: github.repo_info("pallets", "flask"))
+    if not repo:
+        return
+    def source_repo():
+        src = signals.find_source_repo("click", "pypi")
+        if not src:
+            raise RuntimeError("no GitHub repo found for click")
+        return src
+
+    src = check("GitHub: PyPI -> source repo", source_repo)
+    if src:
+        info("click", "/".join(src))
+    if not config.GITHUB_TOKEN:
+        report("SKIP", "GitHub: token", "not set; limit is 60 requests/hour")
+
+
+def test_llm():
+    if not config.llm_configured():
+        report("SKIP", "LLM", "LLM_API_KEY not set; rule-based explanations will be used")
+        return
+    models = check(f"LLM: list models at {config.LLM_BASE_URL}", llm.list_models)
+    if models is None:
+        return
+    if config.LLM_MODEL not in models:
+        report("FAIL", f"LLM: model {config.LLM_MODEL} available",
+               f"not offered; set LLM_MODEL to one of: {', '.join(models[:15])}")
+        return
+    reply = check(f"LLM: {config.LLM_MODEL} responds",
+                  lambda: llm.complete("Reply with: ok", max_tokens=16))
+    if reply is not None:
+        info("reply", reply.strip()[:60])
+    data = check("LLM: JSON mode", lambda: json.loads(llm.complete(
+        'Return a JSON object {"ok": true}.', max_tokens=32, json_mode=True)))
+    if data is not None:
+        info("json", data)
+
+
+PAYPAL_SECTIONS = {"payouts": test_payouts, "invoices": test_invoices,
+                   "subscriptions": test_subscriptions, "orders": test_orders}
+OTHER_SECTIONS = {"github": test_github, "llm": test_llm}
+
+
+def main(argv: list[str]) -> int:
+    known = {"config", "oauth", *PAYPAL_SECTIONS, *OTHER_SECTIONS}
+    wanted = set(argv) or known
+    unknown = wanted - known
+    if unknown:
+        print(f"Unknown section(s): {', '.join(sorted(unknown))}. Choose from: "
+              f"{', '.join(sorted(known))}")
+        return 2
+
+    print(f"Upstream smoke test against {config.PAYPAL_BASE}\n")
+    if "config" in wanted:
+        test_config()
+
+    needs_paypal = wanted & {"oauth", *PAYPAL_SECTIONS}
+    if needs_paypal:
+        if not config.paypal_configured():
+            report("SKIP", "PayPal", "PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not set in .env")
+        elif test_oauth():
+            for name, fn in PAYPAL_SECTIONS.items():
+                if name in wanted:
+                    fn()
+        else:
+            report("SKIP", "PayPal APIs", "OAuth failed; check the client ID and secret")
+
+    for name, fn in OTHER_SECTIONS.items():
+        if name in wanted:
+            fn()
+
+    print(f"\n{RESULTS['PASS']} passed, {RESULTS['FAIL']} failed, {RESULTS['SKIP']} skipped")
+    return 1 if RESULTS["FAIL"] else 0
 
 
 if __name__ == "__main__":
-    token = get_token()
-    print("[PASS] OAuth: token received")
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
-               "Prefer": "return=representation"}
-    test_payouts(headers)
-    test_invoicing(headers)
-    test_subscriptions(headers)
-    test_orders(headers)
+    sys.exit(main(sys.argv[1:]))

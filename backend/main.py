@@ -50,7 +50,7 @@ def health():
         "paypal_base": config.PAYPAL_BASE,
         "webhook_verification": bool(config.PAYPAL_WEBHOOK_ID),
         "github_token": bool(config.GITHUB_TOKEN),
-        "llm": bool(config.ANTHROPIC_API_KEY),
+        "llm": config.LLM_MODEL if config.llm_configured() else False,
         "oss_monthly_cap": config.OSS_MONTHLY_CAP,
         "demo": {
             "maintainers": config.DEMO_MAINTAINER_EMAILS,
