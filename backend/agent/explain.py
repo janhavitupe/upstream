@@ -15,7 +15,9 @@ from .llm import complete
 SYSTEM = (
     "You write short, factual justifications for how an open-source funding budget was split. "
     "Use ONLY the facts provided. Never invent numbers, maintainers or events. "
-    "Each justification is one sentence, under 30 words, plain English, no hype."
+    "Each justification is one sentence, under 30 words, plain English, no hype. "
+    "Keep each reason's exact meaning: 'no commits in the last year' is not 'no maintainers', "
+    "and a committer count is not the same as the number of people who maintain the project."
 )
 
 
@@ -31,7 +33,7 @@ def explain_allocations(rows: list[dict], budget: float) -> dict[str, str] | Non
             "files_importing_it": r.get("import_count", 0),
             "signals": {k: r["signals"].get(k) for k in
                         ("active_maintainers", "last_release", "pushed_at", "archived",
-                         "security_issues", "has_funding", "stars")},
+                         "security_issues", "has_funding", "funding_platforms", "stars")},
             "rule_reasons": r.get("reasons", []),
         }
         for r in rows if r.get("amount", 0) > 0 and r.get("signals")

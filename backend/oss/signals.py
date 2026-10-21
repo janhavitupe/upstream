@@ -14,6 +14,7 @@ from . import github
 GH_URL_RE = re.compile(r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", re.IGNORECASE)
 NOT_REPO_OWNERS = {"sponsors", "orgs", "users", "features", "marketplace", "topics"}
 SOURCE_HINTS = ("source", "repository", "code", "github", "homepage", "home")
+COMMIT_PAGES = 3  # look at up to 300 commits from the last year when counting committers
 
 _source_cache: dict = {}
 
@@ -68,14 +69,17 @@ def repo_signals(owner: str, repo: str) -> dict:
     authors = set()
     commits_last_year = 0
     try:
-        commits = github.api_get(f"/repos/{owner}/{repo}/commits",
-                                 {"since": since, "per_page": 100})
-        commits_last_year = len(commits)
-        for c in commits:
-            login = (c.get("author") or {}).get("login")
-            ident = login or (c.get("commit", {}).get("author") or {}).get("email")
-            if ident and not str(ident).endswith("[bot]"):
-                authors.add(ident.lower())
+        for page in range(1, COMMIT_PAGES + 1):
+            commits = github.api_get(f"/repos/{owner}/{repo}/commits",
+                                     {"since": since, "per_page": 100, "page": page})
+            commits_last_year += len(commits)
+            for c in commits:
+                login = (c.get("author") or {}).get("login")
+                ident = login or (c.get("commit", {}).get("author") or {}).get("email")
+                if ident and not str(ident).endswith("[bot]"):
+                    authors.add(ident.lower())
+            if len(commits) < 100:
+                break
     except github.GitHubError:
         pass
 
@@ -93,7 +97,7 @@ def repo_signals(owner: str, repo: str) -> dict:
         except github.GitHubError:
             security_issues = None
 
-    funding = github.get_file(owner, repo, ".github/FUNDING.yml") or github.get_file(owner, repo, "FUNDING.yml")
+    funding, funding_source = find_funding(owner, repo)
 
     return {
         "html_url": info.get("html_url"),
@@ -104,7 +108,29 @@ def repo_signals(owner: str, repo: str) -> dict:
         "last_release": last_release,
         "active_maintainers": len(authors) if commits_last_year else 0,
         "commits_last_year": commits_last_year,
-        "commits_capped": commits_last_year >= 100,
+        "commits_capped": commits_last_year >= 100 * COMMIT_PAGES,
         "security_issues": security_issues,
         "has_funding": funding is not None,
+        "funding_source": funding_source,
+        "funding_platforms": funding_platforms(funding),
     }
+
+
+def find_funding(owner: str, repo: str) -> tuple[str | None, str | None]:
+    """FUNDING.yml in the repo, else the org/user-wide default in {owner}/.github."""
+    for where, r in (("repo", repo), ("org", ".github")):
+        for path in (".github/FUNDING.yml", "FUNDING.yml"):
+            text = github.get_file(owner, r, path)
+            if text is not None:
+                return text, where
+    return None, None
+
+
+def funding_platforms(text: str | None) -> list[str]:
+    """Platform names with a value set, e.g. ["github", "open_collective"]."""
+    platforms = []
+    for line in (text or "").splitlines():
+        m = re.match(r"^([a-z_]+)\s*:\s*([^#\s][^#]*?)\s*(#.*)?$", line.strip())
+        if m and m.group(2) not in ("", "[]", "null", "~", "''", '""'):
+            platforms.append(m.group(1))
+    return platforms
