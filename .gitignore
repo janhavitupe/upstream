@@ -1,0 +1,13 @@
+# Secrets
+.env
+*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors / OS
+.DS_Store
+.idea/
