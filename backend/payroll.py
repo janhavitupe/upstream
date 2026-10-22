@@ -161,7 +161,8 @@ def make_preview(schedule: dict, period: str, payday: date, now: datetime) -> di
     split = compute_split(schedule["repo"], schedule["owner_login"], schedule["total"],
                           schedule["top_n"], since, now, schedule["emails"])
     payday_start = datetime.combine(payday, time(0, 0), tzinfo=timezone.utc)
-    pay_after = max(payday_start, now + timedelta(days=schedule["notice_days"]))
+    pay_after = max(payday_start, now + timedelta(days=schedule["notice_days"]),
+                    now + timedelta(minutes=config.PAYROLL_MIN_EDIT_MINUTES))
     run = {"id": uuid.uuid4().hex[:12], "schedule_id": schedule["id"], "period": period,
            "status": "preview", "pay_after": _iso(pay_after), "window_start": split["window_start"],
            "window_end": split["window_end"], "result": split}
@@ -265,7 +266,7 @@ def tick(now: datetime | None = None, pay: bool = True) -> list[str]:
     return actions
 
 
-def start_scheduler(interval_seconds: int = 900) -> threading.Event:
+def start_scheduler(interval_seconds: int = 60) -> threading.Event:
     """Background timer for while the app is awake; the daily GitHub Action covers sleep."""
     stop = threading.Event()
 

@@ -37,6 +37,8 @@ OSS_MONTHLY_CAP = float(os.getenv("OSS_MONTHLY_CAP", "500"))
 # Team payroll: hard cap on any one month's salaries, and the scheduler
 PAYROLL_MONTHLY_CAP = float(os.getenv("PAYROLL_MONTHLY_CAP", "2000"))
 PAYROLL_SCHEDULER = os.getenv("PAYROLL_SCHEDULER", "1").strip() != "0"  # in-app timer
+# Every heads-up leaves at least this long to edit or skip before it pays itself
+PAYROLL_MIN_EDIT_MINUTES = float(os.getenv("PAYROLL_MIN_EDIT_MINUTES", "5"))
 # Unclaimed payouts older than this are cancelled automatically and re-queued
 UNCLAIMED_GRACE_DAYS = float(os.getenv("UNCLAIMED_GRACE_DAYS", "14"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")

@@ -310,9 +310,15 @@ a { color: var(--accent); }
 .schedule .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
 .run-box { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--bg); }
 .run-box .dep-cards { margin-top: 4px; }
+.countdown { margin-top: 8px; font-weight: 600; color: var(--accent); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
 .history { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; }
-.history li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.history li.history-month { display: block; padding: 10px 0; border-top: 1px solid var(--border); }
+.history li.history-month:first-child { border-top: 0; }
+.history-month > .row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.people-status { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--border); }
+.people-status li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 14px; flex-wrap: wrap; }
+.status.UNCLAIMED { background: var(--warn-soft); color: var(--warn); }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .two-col .card { margin: 0; }

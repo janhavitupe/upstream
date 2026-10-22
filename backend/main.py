@@ -69,6 +69,7 @@ def health():
         "github_token": bool(config.GITHUB_TOKEN),
         "llm": config.LLM_MODEL if config.llm_configured() else False,
         "oss_monthly_cap": config.OSS_MONTHLY_CAP,
+        "payroll_min_edit_minutes": config.PAYROLL_MIN_EDIT_MINUTES,
         "demo": {
             "maintainers": config.DEMO_MAINTAINER_EMAILS,
             "client": config.DEMO_CLIENT_EMAIL,
