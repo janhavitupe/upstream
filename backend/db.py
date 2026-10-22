@@ -79,6 +79,34 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
     note          TEXT,
     UNIQUE (schedule_id, period)
 );
+CREATE TABLE IF NOT EXISTS clients (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    email       TEXT NOT NULL,
+    dont_chase  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS invoices (
+    id                TEXT PRIMARY KEY,   -- PayPal invoice id
+    number            TEXT,
+    client_name       TEXT,
+    client_email      TEXT NOT NULL,
+    amount            REAL NOT NULL,
+    currency          TEXT NOT NULL,
+    due_date          TEXT NOT NULL,
+    status            TEXT NOT NULL,      -- PayPal status: SENT, UNPAID, PAID, CANCELLED, ...
+    payer_url         TEXT,               -- the client's pay page
+    items             TEXT NOT NULL,      -- JSON
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    paid_at           TEXT,
+    chase_stage       INTEGER NOT NULL DEFAULT 0,  -- reminders sent so far
+    last_reminder_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL                  -- JSON
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -112,6 +140,9 @@ def init():
     with connect() as c:
         c.execute("PRAGMA journal_mode = WAL")
         c.executescript(SCHEMA)
+        for name, email in config.DEMO_CLIENTS.items():  # sandbox clients, so chat works at once
+            c.execute("INSERT OR IGNORE INTO clients (name, email, created_at) VALUES (?,?,?)",
+                      (name, email, now()))
 
 
 # ---------- analyses ----------
@@ -322,6 +353,87 @@ def update_run(run_id: str, *, expect_status: str | None = None, **fields) -> bo
         args.append(expect_status)
     with connect() as c:
         return c.execute(q, args).rowcount == 1
+
+
+# ---------- clients, invoices, settings ----------
+
+def upsert_client(name: str, email: str) -> dict:
+    with connect() as c:
+        c.execute("INSERT INTO clients (name, email, created_at) VALUES (?,?,?) "
+                  "ON CONFLICT(name) DO UPDATE SET email = excluded.email",
+                  (name.strip(), email.strip(), now()))
+    return find_client(name)
+
+
+def find_client(name: str) -> dict | None:
+    """Exact name first, then a unique partial match ("acme" -> "Acme Corp")."""
+    with connect() as c:
+        row = c.execute("SELECT * FROM clients WHERE name = ?", (name.strip(),)).fetchone()
+        if not row:
+            rows = c.execute("SELECT * FROM clients WHERE name LIKE ?",
+                             (f"%{name.strip()}%",)).fetchall()
+            row = rows[0] if len(rows) == 1 else None
+    return dict(row) if row else None
+
+
+def list_clients() -> list[dict]:
+    with connect() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM clients ORDER BY name").fetchall()]
+
+
+def set_client_chase(name: str, dont_chase: bool) -> bool:
+    with connect() as c:
+        return c.execute("UPDATE clients SET dont_chase = ? WHERE name = ?",
+                         (int(dont_chase), name)).rowcount == 1
+
+
+def save_invoice(inv: dict):
+    ts = now()
+    with connect() as c:
+        c.execute("INSERT OR REPLACE INTO invoices (id, number, client_name, client_email, amount, "
+                  "currency, due_date, status, payer_url, items, created_at, updated_at) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (inv["id"], inv.get("number"), inv.get("client_name"), inv["client_email"],
+                   inv["amount"], inv["currency"], inv["due_date"], inv["status"],
+                   inv.get("payer_url"), json.dumps(inv.get("items") or []), ts, ts))
+
+
+def _invoice(row) -> dict:
+    return {**dict(row), "items": json.loads(row["items"])}
+
+
+def get_invoice(invoice_id: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+    return _invoice(row) if row else None
+
+
+def list_invoices(statuses: tuple[str, ...] | None = None) -> list[dict]:
+    q, args = "SELECT * FROM invoices", ()
+    if statuses:
+        q += f" WHERE status IN ({','.join('?' * len(statuses))})"
+        args = statuses
+    with connect() as c:
+        return [_invoice(r) for r in c.execute(q + " ORDER BY created_at DESC", args).fetchall()]
+
+
+def update_invoice(invoice_id: str, **fields):
+    fields["updated_at"] = now()
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE invoices SET {cols} WHERE id = ?", (*fields.values(), invoice_id))
+
+
+def get_setting(key: str, default=None):
+    with connect() as c:
+        row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return json.loads(row["value"]) if row else default
+
+
+def set_setting(key: str, value):
+    with connect() as c:
+        c.execute("INSERT INTO settings (key, value) VALUES (?,?) "
+                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, json.dumps(value)))
 
 
 # ---------- webhook events ----------

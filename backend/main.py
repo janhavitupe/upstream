@@ -17,6 +17,7 @@ from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts, subscriptions
 from backend.paypal.client import PayPalError
+from backend.getpaid_api import router as getpaid_router
 from backend.payroll_api import router as payroll_router
 from backend.webhooks import router as webhook_router
 
@@ -39,6 +40,7 @@ app = FastAPI(
 )
 app.include_router(webhook_router)
 app.include_router(payroll_router)
+app.include_router(getpaid_router)
 FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 

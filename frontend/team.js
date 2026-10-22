@@ -18,14 +18,16 @@ function showTab(name) {
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
   });
-  show($("tab-fund"), name === "fund");
-  show($("tab-team"), name === "team");
-  if (name === "team") {
-    history.replaceState(null, "", "#team");
-    loadSchedules();
-  } else if (location.hash === "#team") {
-    history.replaceState(null, "", location.pathname);
+  document.querySelectorAll(".tab").forEach((b) => show($(`tab-${b.dataset.tab}`), b.dataset.tab === name));
+  if (name === "fund") {
+    if (location.hash === "#team" || location.hash === "#getpaid") {
+      history.replaceState(null, "", location.pathname);
+    }
+  } else {
+    history.replaceState(null, "", `#${name}`);
   }
+  if (name === "team") loadSchedules();
+  if (name === "getpaid" && typeof loadInvoices === "function") loadInvoices();
 }
 
 document.querySelectorAll(".tab").forEach((b) =>
@@ -334,4 +336,4 @@ setInterval(() => { if (!$("tab-team").hidden) refreshSoon(); }, 15000);
 let minEditMinutes = 5;
 api("/health").then((h) => { minEditMinutes = h.payroll_min_edit_minutes ?? 5; }).catch(() => {});
 
-if (location.hash === "#team") showTab("team");
+if (location.hash === "#team" || location.hash === "#getpaid") showTab(location.hash.slice(1));

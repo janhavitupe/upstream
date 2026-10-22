@@ -26,6 +26,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" role="tab" data-tab="fund" aria-selected="true">Fund your upstream</button>
       <button class="tab" role="tab" data-tab="team" aria-selected="false">Pay your team</button>
+      <button class="tab" role="tab" data-tab="getpaid" aria-selected="false">Get paid</button>
     </nav>
     <div id="tab-fund">
       <section class="card" id="analyze-card">
@@ -123,6 +124,37 @@
         </section>
       </div>
     </div>
+    <div id="tab-getpaid" hidden>
+      <div class="getpaid">
+        <section class="card chat-card">
+          <h2>Get paid</h2>
+          <p class="muted small">Tell Upstream who to bill. Invoices go out straight away through
+            PayPal, and you can undo any of them.</p>
+          <div class="chat-log" id="chat-log" aria-live="polite">
+            <div class="msg bot">Hi! Try: <i>"Bill Acme $500 for the API integration, due in 14
+              days"</i>, or ask <i>"who owes me money?"</i></div>
+          </div>
+          <div class="chips" id="chat-chips">
+            <button class="chip" type="button">Bill Acme $500 for the API integration, due in 14 days</button>
+            <button class="chip" type="button">Who owes me money?</button>
+            <button class="chip" type="button">Bill Globex $1,200 for 3 days of consulting at $400, due next Friday</button>
+          </div>
+          <form class="chat-form" id="chat-form">
+            <input id="chat-input" placeholder="Bill Acme $500 for…" autocomplete="off" required
+                   aria-label="Message">
+            <button class="btn primary" id="chat-send" type="submit">Send</button>
+          </form>
+        </section>
+        <section class="card">
+          <div class="result-head">
+            <h2>Invoices</h2>
+            <span class="muted small" id="inv-summary"></span>
+          </div>
+          <ul class="list" id="inv-list"><li class="muted">No invoices yet.</li></ul>
+        </section>
+      </div>
+    </div>
+
     <div id="tab-team" hidden>
       <section class="card" id="team-setup">
         <h2>Pay your team every month</h2>
@@ -180,6 +212,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/getpaid.js"></script>
   <script src="/static/team.js"></script>
 </body>
 </html>

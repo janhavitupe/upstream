@@ -37,3 +37,5 @@ services:
         value: acme-client@personal.example.com
       - key: DEMO_HOSPITAL_EMAIL
         value: city-hospital@business.example.com
+      - key: DEMO_CLIENTS
+        value: Acme=acme-client@personal.example.com,Globex=globex-client@personal.example.com

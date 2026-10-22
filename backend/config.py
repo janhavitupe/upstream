@@ -47,6 +47,10 @@ DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "
 DEMO_MAINTAINER_EMAILS = _list("DEMO_MAINTAINER_EMAILS")
 DEMO_CLIENT_EMAIL = os.getenv("DEMO_CLIENT_EMAIL", "")
 DEMO_HOSPITAL_EMAIL = os.getenv("DEMO_HOSPITAL_EMAIL", "")
+# Clients the chat knows by name: "Acme=acme@example.com,Globex=globex@example.com"
+DEMO_CLIENTS = dict(pair.split("=", 1) for pair in _list("DEMO_CLIENTS") if "=" in pair) or (
+    {"Acme": DEMO_CLIENT_EMAIL} if DEMO_CLIENT_EMAIL else {})
+INVOICE_MAX = float(os.getenv("INVOICE_MAX", "25000"))  # sanity cap on one chat-made invoice
 
 
 def paypal_configured() -> bool:
