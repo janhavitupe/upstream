@@ -15,6 +15,7 @@ GH_URL_RE = re.compile(r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", re
 NOT_REPO_OWNERS = {"sponsors", "orgs", "users", "features", "marketplace", "topics"}
 SOURCE_HINTS = ("source", "repository", "code", "github", "homepage", "home")
 COMMIT_PAGES = 3  # look at up to 300 commits from the last year when counting committers
+RECENT_SUBJECTS = 20  # commit subjects kept for the AI's judgement of how hard the work was
 
 _source_cache: dict = {}
 
@@ -65,9 +66,11 @@ def repo_signals(owner: str, repo: str) -> dict:
     owner = info.get("owner", {}).get("login", owner)
     repo = info.get("name", repo)
 
-    since = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    year_ago = datetime.now(timezone.utc) - timedelta(days=365)
+    since = year_ago.strftime("%Y-%m-%dT%H:%M:%SZ")
     authors = set()
-    commits_last_year = 0
+    subjects: list[str] = []  # newest human commit subjects, for the AI to judge the work
+    commits_last_year = human_commits = 0
     try:
         for page in range(1, COMMIT_PAGES + 1):
             commits = github.api_get(f"/repos/{owner}/{repo}/commits",
@@ -75,19 +78,39 @@ def repo_signals(owner: str, repo: str) -> dict:
             commits_last_year += len(commits)
             for c in commits:
                 login = (c.get("author") or {}).get("login")
+                name = (c.get("commit", {}).get("author") or {}).get("name") or ""
                 ident = login or (c.get("commit", {}).get("author") or {}).get("email")
-                if ident and not str(ident).endswith("[bot]"):
+                if _is_bot(login, name):
+                    continue  # automated dependency bumps aren't maintainer work
+                human_commits += 1
+                subject = (c.get("commit", {}).get("message") or "").strip().splitlines()[0:1]
+                subject = subject[0] if subject else ""
+                if subject and len(subjects) < RECENT_SUBJECTS:
+                    subjects.append(subject[:120])
+                if ident:
                     authors.add(ident.lower())
             if len(commits) < 100:
                 break
     except github.GitHubError:
         pass
 
-    last_release = None
+    last_release, releases_last_year = None, 0
     try:
-        last_release = github.api_get(f"/repos/{owner}/{repo}/releases/latest").get("published_at")
-    except github.NotFound:
+        for rel in github.api_get(f"/repos/{owner}/{repo}/releases", {"per_page": 100}):
+            published = rel.get("published_at")
+            if rel.get("draft") or not published:
+                continue
+            if not rel.get("prerelease") and (last_release is None or published > last_release):
+                last_release = published
+            if datetime.fromisoformat(published.replace("Z", "+00:00")) > year_ago:
+                releases_last_year += 1
+    except github.GitHubError:
         pass
+
+    try:  # bytes of code per language: the size of what the maintainers keep working
+        code_bytes = sum(github.api_get(f"/repos/{owner}/{repo}/languages").values())
+    except github.GitHubError:
+        code_bytes = None
 
     security_issues = None
     if config.GITHUB_TOKEN:  # search API is tightly rate-limited without a token
@@ -108,12 +131,21 @@ def repo_signals(owner: str, repo: str) -> dict:
         "last_release": last_release,
         "active_maintainers": len(authors) if commits_last_year else 0,
         "commits_last_year": commits_last_year,
+        "human_commits_last_year": human_commits,
         "commits_capped": commits_last_year >= 100 * COMMIT_PAGES,
+        "releases_last_year": releases_last_year,
+        "recent_commit_subjects": subjects,
+        "code_kb": None if code_bytes is None else round(code_bytes / 1024, 1),
         "security_issues": security_issues,
         "has_funding": funding is not None,
         "funding_source": funding_source,
         "funding_platforms": funding_platforms(funding),
     }
+
+
+def _is_bot(login: str | None, name: str) -> bool:
+    who = f"{login or ''} {name}".lower()
+    return "[bot]" in who or any(b in who for b in ("dependabot", "renovate", "greenkeeper"))
 
 
 def find_funding(owner: str, repo: str) -> tuple[str | None, str | None]:

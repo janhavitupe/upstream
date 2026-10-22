@@ -94,6 +94,12 @@ def analyze_repo(repo_ref: str, budget: float, max_deps: int = 10) -> dict:
                         "rate limit is 60 requests/hour.")
 
     rows = scoring.score_and_allocate(rows, budget)
+    idle = [r["package"] for r in rows if r.get("signals") and not r.get("work_score")]
+    if idle:
+        warnings.append(f"No commits or releases in the last year, so not funded: "
+                        f"{', '.join(idle)}. You rely on {'it' if len(idle) == 1 else 'them'}; "
+                        f"consider whether {'it needs' if len(idle) == 1 else 'they need'} "
+                        f"replacing.")
 
     review = review_allocations(rows, budget)
     if review:

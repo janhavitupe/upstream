@@ -9,11 +9,11 @@ Built for the PayPal *Build What's Next with PayPal and AI* hackathon (submissio
 
 ## Status
 
-This is a **starter skeleton**. The PayPal integrations and the API routes exist; the AI chat layer and a dashboard come next.
+Module 1 works end to end from the dashboard at `/`. The PayPal integrations for Modules 2–4 exist as API routes; their AI layer and screens come next.
 
 | Module | Priority | What's here | Still to build |
 |---|---|---|---|
-| 1. Fund your upstream (OSS payouts) | 1 | Repo → dependency parsing → GitHub health signals → scored split → approved PayPal Payouts batch + status | LLM-bounded adjustments, dashboard UI |
+| 1. Fund your upstream (OSS payouts) | 1 | Dashboard: repo → dependency health → rule-based split → AI adjustments (±5 pts, enforced) with reasons → edit → approve → PayPal Payouts batch → live status | Unclaimed re-queue, giving report |
 | 2. Get paid (invoices) | 2 | Create + send (no approval step), list open, remind, cancel | Chat input, voice-matched reminders, overdue scheduler |
 | 3. Fair retainers (subscriptions) | 3 | Product → plan → subscription, pause/resume | Pre-renewal heads-up job |
 | 4. Pay the bill, not the person | 4 | Donation order paid directly to the hospital account + capture | Bill upload and AI verification |
@@ -32,9 +32,9 @@ This is a **starter skeleton**. The PayPal integrations and the API routes exist
 3. Copy `.env.example` to `.env` and paste your PayPal sandbox **Client ID** and **Secret**.
 4. Check PayPal access: run the **"PayPal smoke test"** launch config (or `python scripts/smoke_test.py`). Every line should say PASS.
 5. Start the API: press **F5** → **"Run Upstream API"** (or `uvicorn backend.main:app --reload`).
-6. Open **http://localhost:8000/docs** to try every endpoint from the browser.
+6. Open **http://localhost:8000** for the dashboard, or **http://localhost:8000/docs** to try every endpoint.
 
-**Quick test without PayPal keys:** in `/docs`, run `POST /api/oss/analyze` with `{"repo": "pallets/flask", "budget": 100}`. It reads Flask's dependencies, scores each one's health on GitHub and proposes a fair split. Add a `GITHUB_TOKEN` to `.env` to avoid GitHub's 60 requests/hour limit.
+**Quick test without PayPal keys:** on the dashboard, analyze `pallets/flask` (or in `/docs`, run `POST /api/oss/analyze` with `{"repo": "pallets/flask", "budget": 100}`). It reads Flask's dependencies, scores each one's health on GitHub and proposes a fair split. Add a `GITHUB_TOKEN` to `.env` to avoid GitHub's 60 requests/hour limit.
 
 ## Project structure
 ```
@@ -43,6 +43,7 @@ backend/
   config.py            settings from .env
   webhooks.py          PayPal webhook receiver; payout events update stored status
   db.py                SQLite: analyses, payout batches + items, webhook events
+frontend/              dashboard (plain HTML/JS + AG Grid; card view on phones)
   paypal/              client (OAuth), payouts, invoices, subscriptions, orders, webhooks
   oss/                 github client, manifest parsing, health signals, scoring, analyzer
   agent/explain.py     LLM explanations for each allocation (optional)

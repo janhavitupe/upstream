@@ -8,7 +8,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend import config, db
@@ -33,6 +34,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(webhook_router)
+FRONTEND = config.ROOT / "frontend"
+app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
 
 @app.exception_handler(PayPalError)
@@ -48,8 +51,7 @@ async def github_error_handler(_, e: GitHubError):
 
 @app.get("/", include_in_schema=False)
 def root():
-    # No dashboard yet: the interactive API explorer is the UI for now
-    return RedirectResponse("/docs")
+    return FileResponse(FRONTEND / "index.html")
 
 
 @app.get("/health", tags=["meta"])

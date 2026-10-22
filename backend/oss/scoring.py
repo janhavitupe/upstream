@@ -1,4 +1,4 @@
-"""Deterministic, explainable scoring: weight = criticality x (0.5 + health risk)."""
+"""Deterministic, explainable scoring: pay for work done x complexity; health is shown, not paid for."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -62,24 +62,40 @@ def health_risk(sig: dict) -> tuple[float, list[str]]:
     return min(risk, 1.0), reasons
 
 
-def criticality(import_count: int, max_count: int) -> float:
-    if max_count <= 0:
-        return 1.0
-    return 0.3 + 0.7 * (import_count / max_count)
+RELEASE_WEIGHT = 5  # one release counts as much work as this many commits (packaging, notes, testing)
+
+
+def work_score(sig: dict) -> float:
+    """Maintainer work in the last 12 months: human commits plus weighted releases."""
+    return (sig.get("human_commits_last_year") or 0) + RELEASE_WEIGHT * (sig.get("releases_last_year") or 0)
 
 
 def score_and_allocate(rows: list[dict], budget: float) -> list[dict]:
+    """Pay in proportion to work done x complexity of the job.
+
+    weight = sqrt(work) x sqrt(code size). The square roots give diminishing returns: twice
+    the work earns about 1.4x, so one very busy project can't take the whole budget, but the
+    ordering is the same as a straight ratio. No work in the last year means no money.
+    """
     fundable = [r for r in rows if r.get("signals")]
-    max_imp = max((r.get("import_count", 0) for r in fundable), default=0)
 
     for r in fundable:
-        risk, reasons = health_risk(r["signals"])
-        crit = criticality(r.get("import_count", 0), max_imp)
+        sig = r["signals"]
+        risk, health_notes = health_risk(sig)
+        work = work_score(sig)
+        kb = sig.get("code_kb") or 0
+        commits, releases = sig.get("human_commits_last_year") or 0, sig.get("releases_last_year") or 0
+        capped = "+" if sig.get("commits_capped") else ""
         n = r.get("import_count", 0)
-        usage = (f"imported in {n} of your files" if n
-                 else "direct dependency (no imports found in the scanned files)")
-        r.update(risk=round(risk, 2), criticality=round(crit, 2),
-                 reasons=[usage] + reasons, weight=crit * (0.5 + risk))
+        usage = f"imported in {n} of your files" if n else "direct dependency"
+        if work > 0:
+            reasons = [f"{commits}{capped} commit{'s' if commits != 1 else ''} and {releases} "
+                       f"release{'s' if releases != 1 else ''} in the last year",
+                       f"{kb:,.0f} KB of code to maintain", usage]
+        else:
+            reasons = ["no commits or releases in the last year, so not funded", usage]
+        r.update(risk=round(risk, 2), health_notes=health_notes, work_score=work,
+                 complexity_kb=kb, reasons=reasons, weight=(work * kb) ** 0.5)
 
     total_w = sum(r["weight"] for r in fundable)
     if fundable and total_w > 0:
