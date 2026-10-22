@@ -29,6 +29,10 @@ class NotFound(GitHubError):
     pass
 
 
+class Pending(GitHubError):
+    """GitHub is still computing this (HTTP 202); ask again shortly."""
+
+
 def _headers(accept: str = "application/vnd.github+json") -> dict:
     h = {"Accept": accept, "User-Agent": "upstream-hackathon",
          "X-GitHub-Api-Version": "2022-11-28"}
@@ -64,6 +68,8 @@ def api_get(path: str, params: dict | None = None):
                           "(github.com/settings/tokens) and restart.")
     if r.status_code >= 400:
         raise GitHubError(r.status_code, f"GitHub {r.status_code} on {path}: {r.text[:200]}")
+    if r.status_code == 202:  # never cache "still computing"
+        raise Pending(202, f"GitHub is still computing {path}")
     value = r.json()
     _store(key, value)
     return value
@@ -105,6 +111,16 @@ def parse_repo_ref(ref: str) -> tuple[str, str]:
 
 def repo_info(owner: str, repo: str) -> dict:
     return api_get(f"/repos/{owner}/{repo}")
+
+
+def contributor_stats(owner: str, repo: str, attempts: int = 6) -> list[dict] | None:
+    """Weekly additions/deletions/commits per author, or None if GitHub won't compute it."""
+    for i in range(attempts):
+        try:
+            return api_get(f"/repos/{owner}/{repo}/stats/contributors") or []
+        except Pending:
+            time.sleep(min(2 * (i + 1), 6))
+    return None
 
 
 def get_tree(owner: str, repo: str, branch: str) -> list[str]:

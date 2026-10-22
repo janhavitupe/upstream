@@ -12,18 +12,22 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import config, db, report, requeue
+from backend import config, db, payroll, report, requeue
 from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts, subscriptions
 from backend.paypal.client import PayPalError
+from backend.payroll_api import router as payroll_router
 from backend.webhooks import router as webhook_router
 
 
 @asynccontextmanager
 async def lifespan(_):
     db.init()
+    stop = payroll.start_scheduler() if config.PAYROLL_SCHEDULER else None
     yield
+    if stop:
+        stop.set()
 
 
 app = FastAPI(
@@ -34,6 +38,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(webhook_router)
+app.include_router(payroll_router)
 FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 

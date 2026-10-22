@@ -49,6 +49,36 @@ CREATE TABLE IF NOT EXISTS carryover (
     used_by_analysis  TEXT,               -- set when a later approved payout includes it
     UNIQUE (source_batch_id, source_item_id)
 );
+CREATE TABLE IF NOT EXISTS payroll_schedules (
+    id               TEXT PRIMARY KEY,
+    repo             TEXT NOT NULL,
+    owner_login      TEXT NOT NULL,        -- excluded from the split: they're paying
+    total            REAL NOT NULL,        -- monthly amount, shared by the top contributors
+    pay_day          INTEGER NOT NULL,     -- 1-28, every month
+    top_n            INTEGER NOT NULL,
+    notice_days      INTEGER NOT NULL,     -- heads-up before payday
+    emails           TEXT NOT NULL,        -- JSON {login: paypal email}
+    active           INTEGER NOT NULL,
+    created_at       TEXT NOT NULL,
+    approved_at      TEXT NOT NULL,        -- the owner's standing approval
+    last_window_end  TEXT                  -- work up to here has been paid or skipped
+);
+CREATE TABLE IF NOT EXISTS payroll_runs (
+    id            TEXT PRIMARY KEY,
+    schedule_id   TEXT NOT NULL REFERENCES payroll_schedules(id),
+    period        TEXT NOT NULL,           -- YYYY-MM of the payday
+    status        TEXT NOT NULL,           -- preview | skipped | paid | failed
+    created_at    TEXT NOT NULL,
+    pay_after     TEXT NOT NULL,           -- not before payday, and not before the heads-up ran
+    window_start  TEXT NOT NULL,
+    window_end    TEXT NOT NULL,
+    revision      INTEGER NOT NULL,
+    result        TEXT NOT NULL,           -- JSON split
+    batch_id      TEXT,
+    paid_at       TEXT,
+    note          TEXT,
+    UNIQUE (schedule_id, period)
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -201,6 +231,97 @@ def release_carryover(analysis_id: str):
     with connect() as c:
         c.execute("UPDATE carryover SET used_by_analysis = NULL WHERE used_by_analysis = ?",
                   (analysis_id,))
+
+
+# ---------- team payroll ----------
+
+def _schedule(row) -> dict:
+    return {**dict(row), "emails": json.loads(row["emails"]), "active": bool(row["active"])}
+
+
+def _run(row) -> dict:
+    return {**dict(row), "result": json.loads(row["result"])}
+
+
+def create_schedule(s: dict) -> str:
+    sid = uuid.uuid4().hex[:12]
+    ts = now()
+    with connect() as c:
+        c.execute("INSERT INTO payroll_schedules (id, repo, owner_login, total, pay_day, top_n, "
+                  "notice_days, emails, active, created_at, approved_at, last_window_end) "
+                  "VALUES (?,?,?,?,?,?,?,?,1,?,?,?)",
+                  (sid, s["repo"], s["owner_login"], s["total"], s["pay_day"], s["top_n"],
+                   s["notice_days"], json.dumps(s.get("emails") or {}), ts, ts,
+                   s.get("last_window_end")))
+    return sid
+
+
+def get_schedule(sid: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM payroll_schedules WHERE id = ?", (sid,)).fetchone()
+    return _schedule(row) if row else None
+
+
+def list_schedules(active_only: bool = False) -> list[dict]:
+    q = "SELECT * FROM payroll_schedules" + (" WHERE active = 1" if active_only else "")
+    with connect() as c:
+        rows = c.execute(q + " ORDER BY created_at DESC").fetchall()
+    return [_schedule(r) for r in rows]
+
+
+def update_schedule(sid: str, **fields):
+    if "emails" in fields:
+        fields["emails"] = json.dumps(fields["emails"])
+    if "active" in fields:
+        fields["active"] = int(fields["active"])
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE payroll_schedules SET {cols} WHERE id = ?", (*fields.values(), sid))
+
+
+def create_run(run: dict) -> bool:
+    """False if this schedule already has a run for this period."""
+    with connect() as c:
+        cur = c.execute("INSERT OR IGNORE INTO payroll_runs (id, schedule_id, period, status, "
+                        "created_at, pay_after, window_start, window_end, revision, result) "
+                        "VALUES (?,?,?,?,?,?,?,?,1,?)",
+                        (run["id"], run["schedule_id"], run["period"], run["status"], now(),
+                         run["pay_after"], run["window_start"], run["window_end"],
+                         json.dumps(run["result"])))
+    return cur.rowcount == 1
+
+
+def get_run(run_id: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM payroll_runs WHERE id = ?", (run_id,)).fetchone()
+    return _run(row) if row else None
+
+
+def run_for_period(sid: str, period: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM payroll_runs WHERE schedule_id = ? AND period = ?",
+                        (sid, period)).fetchone()
+    return _run(row) if row else None
+
+
+def runs_for_schedule(sid: str) -> list[dict]:
+    with connect() as c:
+        rows = c.execute("SELECT * FROM payroll_runs WHERE schedule_id = ? ORDER BY period DESC",
+                         (sid,)).fetchall()
+    return [_run(r) for r in rows]
+
+
+def update_run(run_id: str, *, expect_status: str | None = None, **fields) -> bool:
+    """Conditional update: with expect_status, only applies if the run is still in that state."""
+    if "result" in fields:
+        fields["result"] = json.dumps(fields["result"])
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    q, args = f"UPDATE payroll_runs SET {cols} WHERE id = ?", [*fields.values(), run_id]
+    if expect_status:
+        q += " AND status = ?"
+        args.append(expect_status)
+    with connect() as c:
+        return c.execute(q, args).rowcount == 1
 
 
 # ---------- webhook events ----------

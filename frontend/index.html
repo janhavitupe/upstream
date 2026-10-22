@@ -23,98 +23,154 @@
   </header>
 
   <main>
-    <section class="card" id="analyze-card">
-      <h2>Fund your upstream</h2>
-      <p class="muted">Pick a GitHub repo. Upstream reads its dependencies, checks each project's
-        health, and proposes a fair split of your monthly budget.</p>
-      <form id="analyze-form" class="analyze-form">
-        <label class="field grow">
-          <span>Repository</span>
-          <input id="repo" name="repo" placeholder="owner/repo or GitHub URL" value="pallets/flask"
-                 required autocomplete="off" spellcheck="false">
-        </label>
-        <label class="field">
-          <span>Budget (USD)</span>
-          <input id="budget" name="budget" type="number" min="1" step="1" value="100" required>
-        </label>
-        <label class="field">
-          <span>Max deps</span>
-          <input id="max-deps" name="max_deps" type="number" min="1" max="25" value="8" required>
-        </label>
-        <button class="btn primary" id="analyze-btn" type="submit">Analyze</button>
-      </form>
-      <div id="analyze-progress" class="progress" hidden>
-        <div class="spinner" aria-hidden="true"></div>
-        <span id="progress-text">Reading dependencies…</span>
-      </div>
-      <div id="analyze-error" class="alert error" hidden></div>
-    </section>
-
-    <section class="card" id="result-card" hidden>
-      <div class="result-head">
-        <div>
-          <h2 id="result-title"></h2>
-          <p class="muted" id="result-meta"></p>
-        </div>
-        <div class="total-box">
-          <span class="muted">Total</span>
-          <strong id="total-amount">$0.00</strong>
-          <span class="muted small" id="total-note"></span>
-        </div>
-      </div>
-      <div id="warnings"></div>
-
-      <div class="legend muted small">
-        <span><i class="dot risk-high"></i>At risk</span>
-        <span><i class="dot risk-mid"></i>Watch</span>
-        <span><i class="dot risk-low"></i>Healthy</span>
-        <span class="sep">·</span>
-        <span>Click an <b>Amount</b> to edit it.</span>
-      </div>
-      <div id="grid" class="grid ag-theme-quartz"></div>
-      <ul id="cards" class="dep-cards"></ul>
-
-      <div class="actions">
-        <div class="edit-actions">
-          <button class="btn" id="save-btn" type="button" disabled>Save changes</button>
-          <button class="btn ghost" id="discard-btn" type="button" disabled>Discard</button>
-          <span class="muted small" id="edit-status"></span>
-        </div>
-        <div class="approve" id="approve-box">
-          <label class="check">
-            <input type="checkbox" id="approve-check">
-            <span id="approve-label">I approve this payout.</span>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-tab="fund" aria-selected="true">Fund your upstream</button>
+      <button class="tab" role="tab" data-tab="team" aria-selected="false">Pay your team</button>
+    </nav>
+    <div id="tab-fund">
+      <section class="card" id="analyze-card">
+        <h2>Fund your upstream</h2>
+        <p class="muted">Pick a GitHub repo. Upstream reads its dependencies, checks each project's
+          health, and proposes a fair split of your monthly budget.</p>
+        <form id="analyze-form" class="analyze-form">
+          <label class="field grow">
+            <span>Repository</span>
+            <input id="repo" name="repo" placeholder="owner/repo or GitHub URL" value="pallets/flask"
+                   required autocomplete="off" spellcheck="false">
           </label>
-          <button class="btn primary" id="approve-btn" type="button" disabled>Approve &amp; pay</button>
+          <label class="field">
+            <span>Budget (USD)</span>
+            <input id="budget" name="budget" type="number" min="1" step="1" value="100" required>
+          </label>
+          <label class="field">
+            <span>Max deps</span>
+            <input id="max-deps" name="max_deps" type="number" min="1" max="25" value="8" required>
+          </label>
+          <button class="btn primary" id="analyze-btn" type="submit">Analyze</button>
+        </form>
+        <div id="analyze-progress" class="progress" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <span id="progress-text">Reading dependencies…</span>
         </div>
-      </div>
-      <div id="action-error" class="alert error" hidden></div>
-    </section>
-
-    <section class="card" id="payout-card" hidden>
-      <div class="result-head">
-        <div>
-          <h2>Payout</h2>
-          <p class="muted" id="payout-meta"></p>
-        </div>
-        <button class="btn ghost" id="refresh-btn" type="button">Refresh</button>
-      </div>
-      <ul class="payout-list" id="payout-items"></ul>
-      <div class="payout-actions">
-        <a class="btn" id="report-link" href="#" target="_blank" rel="noopener">Share giving report</a>
-        <button class="btn ghost" id="requeue-btn" type="button" hidden>Cancel &amp; re-queue unclaimed</button>
-        <span class="muted small" id="requeue-note"></span>
-      </div>
-    </section>
-
-    <div class="two-col">
-      <section class="card">
-        <h2>Recent analyses</h2>
-        <ul class="list" id="history"><li class="muted">None yet.</li></ul>
+        <div id="analyze-error" class="alert error" hidden></div>
       </section>
+
+      <section class="card" id="result-card" hidden>
+        <div class="result-head">
+          <div>
+            <h2 id="result-title"></h2>
+            <p class="muted" id="result-meta"></p>
+          </div>
+          <div class="total-box">
+            <span class="muted">Total</span>
+            <strong id="total-amount">$0.00</strong>
+            <span class="muted small" id="total-note"></span>
+          </div>
+        </div>
+        <div id="warnings"></div>
+
+        <div class="legend muted small">
+          <span><i class="dot risk-high"></i>At risk</span>
+          <span><i class="dot risk-mid"></i>Watch</span>
+          <span><i class="dot risk-low"></i>Healthy</span>
+          <span class="sep">·</span>
+          <span>Click an <b>Amount</b> to edit it.</span>
+        </div>
+        <div id="grid" class="grid ag-theme-quartz"></div>
+        <ul id="cards" class="dep-cards"></ul>
+
+        <div class="actions">
+          <div class="edit-actions">
+            <button class="btn" id="save-btn" type="button" disabled>Save changes</button>
+            <button class="btn ghost" id="discard-btn" type="button" disabled>Discard</button>
+            <span class="muted small" id="edit-status"></span>
+          </div>
+          <div class="approve" id="approve-box">
+            <label class="check">
+              <input type="checkbox" id="approve-check">
+              <span id="approve-label">I approve this payout.</span>
+            </label>
+            <button class="btn primary" id="approve-btn" type="button" disabled>Approve &amp; pay</button>
+          </div>
+        </div>
+        <div id="action-error" class="alert error" hidden></div>
+      </section>
+
+      <section class="card" id="payout-card" hidden>
+        <div class="result-head">
+          <div>
+            <h2>Payout</h2>
+            <p class="muted" id="payout-meta"></p>
+          </div>
+          <button class="btn ghost" id="refresh-btn" type="button">Refresh</button>
+        </div>
+        <ul class="payout-list" id="payout-items"></ul>
+        <div class="payout-actions">
+          <a class="btn" id="report-link" href="#" target="_blank" rel="noopener">Share giving report</a>
+          <button class="btn ghost" id="requeue-btn" type="button" hidden>Cancel &amp; re-queue unclaimed</button>
+          <span class="muted small" id="requeue-note"></span>
+        </div>
+      </section>
+
+      <div class="two-col">
+        <section class="card">
+          <h2>Recent analyses</h2>
+          <ul class="list" id="history"><li class="muted">None yet.</li></ul>
+        </section>
+        <section class="card">
+          <h2>PayPal events</h2>
+          <ul class="list" id="events"><li class="muted">No webhook events yet.</li></ul>
+        </section>
+      </div>
+    </div>
+    <div id="tab-team" hidden>
+      <section class="card" id="team-setup">
+        <h2>Pay your team every month</h2>
+        <p class="muted">Pick a repo you own. On the day you choose, Upstream pays its top
+          contributors from your monthly total, split by the work they did that month. You get a
+          heads-up before each payday and can skip or edit it.</p>
+        <form id="team-form" class="analyze-form">
+          <label class="field grow"><span>Your repository</span>
+            <input id="t-repo" placeholder="owner/repo" value="expressjs/express" required
+                   autocomplete="off" spellcheck="false"></label>
+          <label class="field"><span>Your GitHub login</span>
+            <input id="t-owner" placeholder="you" value="wesleytodd" required autocomplete="off"
+                   spellcheck="false"></label>
+          <label class="field"><span>Monthly total (USD)</span>
+            <input id="t-total" type="number" min="1" step="1" value="50" required></label>
+          <label class="field"><span>Pay day (1-28)</span>
+            <input id="t-day" type="number" min="1" max="28" value="1" required></label>
+          <label class="field"><span>Top contributors</span>
+            <input id="t-top" type="number" min="1" max="50" value="5" required></label>
+          <label class="field"><span>Heads-up (days)</span>
+            <input id="t-notice" type="number" min="0" max="7" value="2" required></label>
+          <button class="btn primary" id="t-preview-btn" type="submit">Preview split</button>
+        </form>
+        <div id="t-progress" class="progress" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <span>Reading this month's commits and asking the AI to review the work…</span>
+        </div>
+        <div id="t-error" class="alert error" hidden></div>
+        <div id="t-preview" hidden>
+          <h2 class="section-title" id="t-preview-title"></h2>
+          <p class="muted small" id="t-preview-meta"></p>
+          <div id="t-warnings"></div>
+          <ul class="dep-cards report" id="t-people"></ul>
+          <div class="actions">
+            <label class="check"><input type="checkbox" id="t-approve">
+              <span id="t-approve-label"></span></label>
+            <button class="btn primary" id="t-start-btn" type="button" disabled>Start monthly payroll</button>
+          </div>
+        </div>
+      </section>
+
       <section class="card">
-        <h2>PayPal events</h2>
-        <ul class="list" id="events"><li class="muted">No webhook events yet.</li></ul>
+        <div class="result-head">
+          <h2>Your payroll schedules</h2>
+          <button class="btn ghost" id="t-tick-btn" type="button">Run today's check</button>
+        </div>
+        <p class="muted small" id="t-tick-note"></p>
+        <div id="t-schedules"><p class="muted">No schedules yet.</p></div>
       </section>
     </div>
   </main>
@@ -126,5 +182,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/team.js"></script>
 </body>
 </html>

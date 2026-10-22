@@ -34,6 +34,9 @@ APP_BASE_URL = (os.getenv("APP_BASE_URL", "").strip() or os.getenv("RENDER_EXTER
                 or "http://localhost:8000").rstrip("/")
 INVOICER_NAME = os.getenv("INVOICER_NAME", "Upstream Studio")
 OSS_MONTHLY_CAP = float(os.getenv("OSS_MONTHLY_CAP", "500"))
+# Team payroll: hard cap on any one month's salaries, and the scheduler
+PAYROLL_MONTHLY_CAP = float(os.getenv("PAYROLL_MONTHLY_CAP", "2000"))
+PAYROLL_SCHEDULER = os.getenv("PAYROLL_SCHEDULER", "1").strip() != "0"  # in-app timer
 # Unclaimed payouts older than this are cancelled automatically and re-queued
 UNCLAIMED_GRACE_DAYS = float(os.getenv("UNCLAIMED_GRACE_DAYS", "14"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")

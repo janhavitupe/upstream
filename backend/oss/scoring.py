@@ -128,7 +128,7 @@ def split_cents(weights: list[float], total: float) -> list[float]:
 
 
 def apply_ai_adjustments(rows: list[dict], budget: float, adjustments: dict[str, dict],
-                         max_points: float) -> list[dict]:
+                         max_points: float, key: str = "package") -> list[dict]:
     """Shift each rule-based share by at most +/- max_points percentage points.
 
     The clamp is enforced here, not trusted to the model. Shares are then
@@ -139,7 +139,7 @@ def apply_ai_adjustments(rows: list[dict], budget: float, adjustments: dict[str,
         return rows
     shares = []
     for r in fundable:
-        adj = adjustments.get(r["package"]) or {}
+        adj = adjustments.get(r[key]) or {}
         try:
             points = float(adj.get("adjust_points") or 0)
         except (TypeError, ValueError):
@@ -157,5 +157,5 @@ def apply_ai_adjustments(rows: list[dict], budget: float, adjustments: dict[str,
     for r, amount, share in zip(fundable, split_cents(shares, budget), shares):
         r["amount"] = amount
         r["percent"] = round(100 * share / total_share, 1)
-    rows.sort(key=lambda r: (-r["amount"], r["package"]))
+    rows.sort(key=lambda r: (-r["amount"], r[key]))
     return rows
