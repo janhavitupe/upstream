@@ -69,6 +69,7 @@ def repo_signals(owner: str, repo: str) -> dict:
     year_ago = datetime.now(timezone.utc) - timedelta(days=365)
     since = year_ago.strftime("%Y-%m-%dT%H:%M:%SZ")
     authors = set()
+    by_login: dict[str, int] = {}  # GitHub login -> human commits, to show who did the work
     subjects: list[str] = []  # newest human commit subjects, for the AI to judge the work
     commits_last_year = human_commits = 0
     try:
@@ -89,6 +90,8 @@ def repo_signals(owner: str, repo: str) -> dict:
                     subjects.append(subject[:120])
                 if ident:
                     authors.add(ident.lower())
+                if login:
+                    by_login[login] = by_login.get(login, 0) + 1
             if len(commits) < 100:
                 break
     except github.GitHubError:
@@ -135,6 +138,8 @@ def repo_signals(owner: str, repo: str) -> dict:
         "commits_capped": commits_last_year >= 100 * COMMIT_PAGES,
         "releases_last_year": releases_last_year,
         "recent_commit_subjects": subjects,
+        "top_committers": [{"login": l, "commits": n} for l, n in
+                           sorted(by_login.items(), key=lambda kv: -kv[1])[:3]],
         "code_kb": None if code_bytes is None else round(code_bytes / 1024, 1),
         "security_issues": security_issues,
         "has_funding": funding is not None,

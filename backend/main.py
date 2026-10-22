@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import config, db
+from backend import config, db, report, requeue
 from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts, subscriptions
@@ -86,11 +86,38 @@ def oss_analyze(body: AnalyzeIn):
         result = analyze_repo(body.repo, body.budget, body.max_deps)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    _apply_carryover(result)
     result["revision"] = 1
     result["history"] = [{"revision": 1, "at": db.now(), "by": result["explained_by"],
                           "note": "Rule-based split" + (" with AI review"
                                                         if result["explained_by"] == "llm" else "")}]
     return {"analysis_id": db.save_analysis(result), **result}
+
+
+def _apply_carryover(result: dict):
+    """Add money re-queued from unclaimed payouts to the same packages in this analysis.
+
+    It is only marked as used when this analysis is actually paid.
+    """
+    deps = {d["package"]: d for d in result["dependencies"] if d.get("signals")}
+    applied = []
+    for c in db.open_carryover():
+        dep = deps.get(c["package"])
+        if not dep:
+            continue
+        dep["amount"] = round(dep["amount"] + c["amount"], 2)
+        dep["carryover"] = round(dep.get("carryover", 0) + c["amount"], 2)
+        applied.append({"id": c["id"], "package": c["package"], "amount": c["amount"]})
+    if applied:
+        total = sum(d["amount"] for d in result["dependencies"])
+        for d in result["dependencies"]:
+            d["percent"] = round(100 * d["amount"] / total, 1) if total else 0.0
+        result["dependencies"].sort(key=lambda r: (-r["amount"], r["package"]))
+        result["carryover"] = applied
+        result["total"] = round(total, 2)
+        result["warnings"].append(
+            f"Includes ${sum(a['amount'] for a in applied):.2f} re-queued from unclaimed "
+            f"payouts: {', '.join(sorted({a['package'] for a in applied}))}.")
 
 
 @app.get("/api/oss/analyses", tags=["1 · OSS payouts"])
@@ -195,19 +222,37 @@ def oss_payout(body: PayoutIn):
                                  f"${config.OSS_MONTHLY_CAP:.2f} (OSS_MONTHLY_CAP).")
     items = [{"email": body.emails.get(d["package"]) or d.get("suggested_email", ""),
               "amount": d["amount"],
-              "note": d.get("explanation") or f"Thank you for maintaining {d['package']}.",
+              "note": _payout_note(d, analysis),
               "item_id": d["package"][:63]} for d in lines]
     missing = [i["item_id"] for i in items if "@" not in i["email"]]
     if missing:
         raise HTTPException(400, f"Missing PayPal email for: {', '.join(missing)}")
+    # Carry-over is used only if its package is still being paid, and only once
+    paid = {d["package"] for d in lines}
+    carry_ids = [c["id"] for c in analysis.get("carryover", []) if c["package"] in paid]
+    if not db.claim_carryover(carry_ids, body.analysis_id):
+        raise HTTPException(409, "Some re-queued money in this analysis was already paid by "
+                                 "another payout. Run a new analysis.")
     # Deterministic id: PayPal rejects a reused sender_batch_id, so a double approval
     # can't pay twice even if two requests race past the check above
     sender_batch_id = f"upstream-{body.analysis_id}"
-    resp = payouts.create_batch(items, sender_batch_id=sender_batch_id)
+    try:
+        resp = payouts.create_batch(items, sender_batch_id=sender_batch_id)
+    except PayPalError:
+        db.release_carryover(body.analysis_id)
+        raise
     header = resp.get("batch_header", {})
     db.save_batch(header["payout_batch_id"], body.analysis_id, sender_batch_id,
                   header.get("batch_status"), items)
     return {"total": total, "batch": header}
+
+
+def _payout_note(dep: dict, analysis: dict) -> str:
+    who = (dep.get("intended_for") or {}).get("login")
+    head = f"For @{who}'s work on {dep['package']}" if who else f"For your work on {dep['package']}"
+    if who and analysis.get("sandbox"):
+        head += " (sandbox stand-in)"
+    return f"{head}, from {analysis['repo']} via Upstream. {dep.get('explanation') or ''}".strip()
 
 
 @app.get("/api/oss/payout/{batch_id}", tags=["1 · OSS payouts"])
@@ -222,9 +267,12 @@ def oss_payout_status(batch_id: str):
             if sender_item_id:
                 db.update_item(batch_id, sender_item_id, status=i.get("transaction_status"),
                                payout_item_id=i.get("payout_item_id"))
+        # Money coming back needs no approval: past the grace period, unclaimed items are
+        # cancelled (PayPal returns the funds) and re-queued for that package's next payout
+        requeue.requeue(batch_id, config.UNCLAIMED_GRACE_DAYS)
     stored = db.get_batch(batch_id)
     if stored:
-        return stored
+        return {**stored, "grace_days": config.UNCLAIMED_GRACE_DAYS}
     # A batch created outside Upstream (e.g. by the smoke test): show PayPal's view only
     return {
         "batch_id": batch_id, "status": header.get("batch_status"),
@@ -236,6 +284,30 @@ def oss_payout_status(batch_id: str):
             "payout_item_id": i.get("payout_item_id"),
         } for i in data.get("items", [])],
     }
+
+
+@app.post("/api/oss/payout/{batch_id}/requeue", tags=["1 · OSS payouts"])
+def oss_requeue_unclaimed(batch_id: str):
+    """Cancel unclaimed items now (no grace period) and re-queue them for the next payout."""
+    if not db.get_batch(batch_id):
+        raise HTTPException(404, "Batch not found.")
+    oss_payout_status(batch_id)  # refresh statuses (and pick up anything PayPal returned)
+    requeued, failed = requeue.requeue(batch_id, 0)
+    return {"requeued": requeued, "failed": failed, "batch": db.get_batch(batch_id)}
+
+
+@app.get("/report/{analysis_id}", include_in_schema=False, response_class=HTMLResponse)
+def giving_report(analysis_id: str):
+    analysis = db.get_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(404, "Report not found.")
+    batch = db.batch_for_analysis(analysis_id)
+    return report.render(analysis, db.get_batch(batch["batch_id"]) if batch else None)
+
+
+@app.get("/api/oss/carryover", tags=["1 · OSS payouts"])
+def oss_carryover():
+    return db.open_carryover()
 
 
 # ---------- Module 2: Get paid (invoices, sent without an approval step) ----------

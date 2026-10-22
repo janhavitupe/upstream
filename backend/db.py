@@ -39,6 +39,16 @@ CREATE TABLE IF NOT EXISTS payout_items (
     updated_at       TEXT NOT NULL,
     PRIMARY KEY (batch_id, sender_item_id)
 );
+CREATE TABLE IF NOT EXISTS carryover (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    package           TEXT NOT NULL,
+    amount            REAL NOT NULL,
+    source_batch_id   TEXT NOT NULL,
+    source_item_id    TEXT NOT NULL,      -- the unclaimed item's sender_item_id
+    created_at        TEXT NOT NULL,
+    used_by_analysis  TEXT,               -- set when a later approved payout includes it
+    UNIQUE (source_batch_id, source_item_id)
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -153,6 +163,44 @@ def get_batch(batch_id: str) -> dict | None:
         items = c.execute("SELECT * FROM payout_items WHERE batch_id = ? ORDER BY amount DESC",
                           (batch_id,)).fetchall()
     return {**dict(row), "items": [dict(i) for i in items]}
+
+
+# ---------- carry-over from unclaimed payouts ----------
+
+def add_carryover(package: str, amount: float, batch_id: str, item_id: str) -> bool:
+    """False if this item was already re-queued."""
+    with connect() as c:
+        cur = c.execute("INSERT OR IGNORE INTO carryover (package, amount, source_batch_id, "
+                        "source_item_id, created_at) VALUES (?,?,?,?,?)",
+                        (package, amount, batch_id, item_id, now()))
+    return cur.rowcount == 1
+
+
+def open_carryover() -> list[dict]:
+    with connect() as c:
+        rows = c.execute("SELECT * FROM carryover WHERE used_by_analysis IS NULL "
+                         "ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def claim_carryover(ids: list[int], analysis_id: str) -> bool:
+    """Mark carry-over as used by this analysis; False if any was already used elsewhere."""
+    if not ids:
+        return True
+    with connect() as c:
+        marks = ",".join("?" * len(ids))
+        cur = c.execute(f"UPDATE carryover SET used_by_analysis = ? WHERE id IN ({marks}) "
+                        "AND used_by_analysis IS NULL", (analysis_id, *ids))
+        if cur.rowcount != len(ids):
+            c.rollback()
+            return False
+    return True
+
+
+def release_carryover(analysis_id: str):
+    with connect() as c:
+        c.execute("UPDATE carryover SET used_by_analysis = NULL WHERE used_by_analysis = ?",
+                  (analysis_id,))
 
 
 # ---------- webhook events ----------

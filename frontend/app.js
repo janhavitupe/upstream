@@ -189,7 +189,9 @@ function columnDefs() {
       cellRenderer: (p) => {
         const reason = p.data.ai_adjust_reason
           ? `<div class="muted small">AI: ${esc(p.data.ai_adjust_reason)}</div>` : "";
-        return `${esc(p.value)}${reason}`;
+        const carry = p.data.carryover
+          ? `<div class="muted small">Includes ${money(p.data.carryover)} re-queued from an unclaimed payout</div>` : "";
+        return `${esc(p.value)}${reason}${carry}`;
       },
     },
     {
@@ -232,7 +234,19 @@ function columnDefs() {
       valueFormatter: (p) => money(p.value),
     },
     {
-      headerName: "Pay to", field: "suggested_email", width: 240,
+      headerName: "For", width: 150,
+      valueGetter: (p) => p.data.intended_for?.login || null,
+      cellRenderer: (p) => {
+        const t = p.data.intended_for;
+        if (!t) return '<span class="muted">–</span>';
+        return `<a href="https://github.com/${encodeURIComponent(t.login)}" target="_blank" rel="noopener">@${esc(t.login)}</a>`;
+      },
+      tooltipValueGetter: (p) => p.data.intended_for
+        ? `Top committer of the last year (${p.data.intended_for.commits} commits)` : null,
+    },
+    {
+      headerName: analysis?.sandbox === false ? "Pay to" : "Paid to (sandbox stand-in)",
+      field: "suggested_email", width: 250,
       valueFormatter: (p) => currentAmount(p.data) > 0 ? (p.value || "needs email") : "–",
     },
   ];
@@ -258,6 +272,9 @@ function renderCards() {
       `${s.active_maintainers}${s.commits_capped ? "+" : ""} committers`,
       `used in ${r.import_count} file${r.import_count === 1 ? "" : "s"}`,
     ].join(" · ") : esc(r.error || "");
+    const forWho = r.intended_for && currentAmount(r) > 0
+      ? `<div class="facts">For <b>@${esc(r.intended_for.login)}</b>${analysis.sandbox !== false
+          ? ` · paid to sandbox stand-in ${esc(r.suggested_email || "")}` : ""}</div>` : "";
     return `
       <li class="dep-card">
         <div class="row">
@@ -272,6 +289,8 @@ function renderCards() {
         <p class="why">${esc(r.explanation)}</p>
         ${r.ai_adjust_reason ? `<div class="muted small">AI: ${esc(r.ai_adjust_reason)}</div>` : ""}
         <div class="facts">${facts}</div>
+        ${forWho}
+        ${r.carryover ? `<div class="facts">Includes ${money(r.carryover)} re-queued from an unclaimed payout</div>` : ""}
       </li>`;
   }).join("");
 }
@@ -410,12 +429,38 @@ async function showPayout(batchId) {
         <div><span class="num">${money(i.amount)}</span>
           <span class="status ${esc(i.status || "PENDING")}">${esc(i.status || "PENDING")}</span></div>
       </li>`).join("");
+    $("report-link").href = `/report/${encodeURIComponent(analysis.analysis_id)}`;
+    const unclaimed = (b.items || []).filter((i) => i.status === "UNCLAIMED");
+    show($("requeue-btn"), unclaimed.length > 0);
+    $("requeue-note").textContent = unclaimed.length
+      ? `${unclaimed.length} unclaimed. Re-queued automatically after ${b.grace_days ?? 14} days, or now:`
+      : "";
     const done = (b.items || []).every((i) => FINAL_ITEM.has(i.status));
     if (!done) pollTimer = setTimeout(() => showPayout(batchId), 8000);
   } catch (err) {
     $("payout-meta").textContent = `Couldn't load status: ${err.message}`;
   }
 }
+
+$("requeue-btn").addEventListener("click", async () => {
+  if (!analysis?.payout) return;
+  $("requeue-btn").disabled = true;
+  try {
+    const res = await api(`/api/oss/payout/${encodeURIComponent(analysis.payout.batch_id)}/requeue`,
+                          { method: "POST" });
+    const sum = res.requeued.reduce((s, r) => s + r.amount, 0);
+    const failed = (res.failed || []).map((f) => `${f.package} (${f.error})`).join(", ");
+    $("requeue-note").textContent = res.requeued.length
+      ? `Re-queued ${money(sum)}: it will be added to ${res.requeued.map((r) => r.package).join(", ")} in your next analysis.`
+      : failed ? `PayPal couldn't cancel ${failed}. Upstream will retry on the next refresh.`
+               : "Nothing to re-queue.";
+    showPayout(analysis.payout.batch_id);
+  } catch (err) {
+    $("requeue-note").textContent = err.message;
+  } finally {
+    $("requeue-btn").disabled = false;
+  }
+});
 
 $("refresh-btn").addEventListener("click", () => {
   if (analysis?.payout) showPayout(analysis.payout.batch_id);

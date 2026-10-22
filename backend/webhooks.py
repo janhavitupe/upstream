@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import config, db
+from backend import config, db, requeue
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
@@ -34,6 +34,8 @@ def _apply_payout_event(etype: str, resource: dict):
             db.update_item(resource["payout_batch_id"], sender_item_id,
                            status=resource.get("transaction_status"),
                            payout_item_id=resource.get("payout_item_id"))
+            if etype == "PAYMENT.PAYOUTS-ITEM.RETURNED":  # PayPal gave the money back
+                requeue.requeue(resource["payout_batch_id"], float("inf"))
 
 
 @router.post("/webhooks/paypal", tags=["webhooks"])

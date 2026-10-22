@@ -34,6 +34,8 @@ APP_BASE_URL = (os.getenv("APP_BASE_URL", "").strip() or os.getenv("RENDER_EXTER
                 or "http://localhost:8000").rstrip("/")
 INVOICER_NAME = os.getenv("INVOICER_NAME", "Upstream Studio")
 OSS_MONTHLY_CAP = float(os.getenv("OSS_MONTHLY_CAP", "500"))
+# Unclaimed payouts older than this are cancelled automatically and re-queued
+UNCLAIMED_GRACE_DAYS = float(os.getenv("UNCLAIMED_GRACE_DAYS", "14"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")
 
 # Sandbox demo recipients

@@ -1,6 +1,7 @@
 """Read -> Reason pipeline for Module 1: repo -> dependencies -> signals -> fair split."""
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from backend import config
@@ -15,14 +16,31 @@ MANIFESTS = [
     ("package.json", "npm", deps_mod.parse_package_json),
 ]
 CODE_EXT = {"pypi": (".py",), "npm": (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")}
-SKIP_DIRS = ("node_modules/", "venv/", ".venv/", "dist/", "build/", "site-packages/")
-MAX_FILES = 80
+# Folders that aren't the project's own runtime code: vendored deps, builds, tests, docs, examples
+SKIP_DIRS = {"node_modules", "venv", ".venv", "dist", "build", "site-packages", "vendor",
+             "test", "tests", "testing", "__tests__", "spec", "specs", "fixtures", "docs", "doc",
+             "docs_src", "examples", "example", "benchmarks", "benchmark", "bench", "scripts",
+             ".github", "e2e"}
+TEST_FILE = re.compile(r"(^test_|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$|^conftest\.py$)")
+MAX_FILES = 150
+
+
+def source_files(tree: list[str], ecosystem: str, repo_name: str) -> list[str]:
+    """The repo's own code files, most likely runtime source first."""
+    pkg_dirs = {repo_name.lower().replace("-", "_"), repo_name.lower(), "src", "lib"}
+    files = []
+    for path in tree:
+        parts = path.split("/")
+        if (path.endswith(CODE_EXT[ecosystem]) and not TEST_FILE.search(parts[-1])
+                and not any(p.lower() in SKIP_DIRS for p in parts[:-1])):
+            files.append(path)
+    # Files inside the main package / src folder first, then shallow paths before deep ones
+    files.sort(key=lambda p: (p.split("/")[0].lower() not in pkg_dirs, p.count("/"), p))
+    return files[:MAX_FILES]
 
 
 def _count_usage(owner, repo, branch, packages, ecosystem):
-    tree = github.get_tree(owner, repo, branch)
-    files = [p for p in tree
-             if p.endswith(CODE_EXT[ecosystem]) and not any(s in p for s in SKIP_DIRS)][:MAX_FILES]
+    files = source_files(github.get_tree(owner, repo, branch), ecosystem, repo)
     patterns = {p: deps_mod.usage_pattern(p, ecosystem) for p in packages}
     with ThreadPoolExecutor(8) as ex:
         texts = list(ex.map(lambda path: github.raw_file(owner, repo, branch, path) or "", files))
@@ -109,6 +127,11 @@ def analyze_repo(repo_ref: str, budget: float, max_deps: int = 10) -> dict:
                             or "; ".join(r.get("reasons", [])).capitalize()
                             or r.get("error", ""))
 
+    # Who the money is for: the dependency's top human committer of the last year. In the
+    # sandbox real developers can't be paid, so a demo account stands in for them.
+    for r in rows:
+        top = ((r.get("signals") or {}).get("top_committers") or [None])[0]
+        r["intended_for"] = top
     demo = config.DEMO_MAINTAINER_EMAILS
     for i, r in enumerate([r for r in rows if r["amount"] > 0]):
         r["suggested_email"] = demo[i % len(demo)] if demo else ""
@@ -120,6 +143,7 @@ def analyze_repo(repo_ref: str, budget: float, max_deps: int = 10) -> dict:
         "files_scanned": files_scanned,
         "budget": budget,
         "explained_by": "llm" if review else "rules",
+        "sandbox": "sandbox" in config.PAYPAL_BASE,
         "ai_adjust_limit_points": MAX_ADJUST_POINTS if review else 0,
         "dependencies": rows,
         "warnings": warnings,

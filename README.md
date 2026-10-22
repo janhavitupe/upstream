@@ -13,7 +13,7 @@ Module 1 works end to end from the dashboard at `/`. The PayPal integrations for
 
 | Module | Priority | What's here | Still to build |
 |---|---|---|---|
-| 1. Fund your upstream (OSS payouts) | 1 | Dashboard: repo → dependency health → rule-based split → AI adjustments (±5 pts, enforced) with reasons → edit → approve → PayPal Payouts batch → live status | Unclaimed re-queue, giving report |
+| 1. Fund your upstream (OSS payouts) | 1 | **Done.** Dashboard: repo → dependencies → pay for work done × code size (idle projects get $0 and a warning) → AI reads recent commits and adjusts each share by ±5 pts max, with reasons → edit → approve → PayPal Payouts batch → live status; unclaimed/returned payouts re-queued to the next payout; shareable giving report at `/report/{id}` | Maintainer sign-up to receive payouts directly |
 | 2. Get paid (invoices) | 2 | Create + send (no approval step), list open, remind, cancel | Chat input, voice-matched reminders, overdue scheduler |
 | 3. Fair retainers (subscriptions) | 3 | Product → plan → subscription, pause/resume | Pre-renewal heads-up job |
 | 4. Pay the bill, not the person | 4 | Donation order paid directly to the hospital account + capture | Bill upload and AI verification |
@@ -42,7 +42,9 @@ backend/
   main.py              API routes for all four modules
   config.py            settings from .env
   webhooks.py          PayPal webhook receiver; payout events update stored status
-  db.py                SQLite: analyses, payout batches + items, webhook events
+  db.py                SQLite: analyses, payout batches + items, carry-over, webhook events
+  requeue.py           unclaimed/returned payouts -> carry-over for the next payout
+  report.py            public giving report page
 frontend/              dashboard (plain HTML/JS + AG Grid; card view on phones)
   paypal/              client (OAuth), payouts, invoices, subscriptions, orders, webhooks
   oss/                 github client, manifest parsing, health signals, scoring, analyzer

@@ -270,6 +270,8 @@ a { color: var(--accent); }
 .status.FAILED, .status.RETURNED, .status.BLOCKED, .status.REFUNDED, .status.REVERSED, .status.DENIED { background: var(--bad-soft); color: var(--bad); }
 
 .dep-cards { display: none; list-style: none; margin: 0; padding: 0; }
+.dep-cards.report { display: block; margin-top: 12px; }
+.payout-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .dep-card { border-top: 1px solid var(--border); padding: 14px 0; }
 .dep-card:first-child { border-top: 0; }
 .dep-card .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }

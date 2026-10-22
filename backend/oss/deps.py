@@ -74,13 +74,24 @@ def parse_package_json(text: str) -> list[str]:
     return out
 
 
-def import_name(pkg: str) -> str:
-    return IMPORT_ALIASES.get(pkg, pkg.replace("-", "_"))
+def import_names(pkg: str) -> list[str]:
+    """Likely module names for a PyPI package: markdown-it-py -> markdown_it, python-jose -> jose."""
+    if pkg in IMPORT_ALIASES:
+        return [IMPORT_ALIASES[pkg]]
+    base = pkg.lower()
+    names = [base.replace("-", "_")]
+    for prefix in ("python-", "py-"):
+        if base.startswith(prefix):
+            names.append(base[len(prefix):].replace("-", "_"))
+    for suffix in ("-py", "-python", "-python3"):
+        if base.endswith(suffix):
+            names.append(base[: -len(suffix)].replace("-", "_"))
+    return list(dict.fromkeys(names))
 
 
 def usage_pattern(pkg: str, ecosystem: str) -> re.Pattern:
     if ecosystem == "pypi":
-        mod = re.escape(import_name(pkg))
-        return re.compile(rf"^\s*(?:from|import)\s+{mod}\b", re.MULTILINE | re.IGNORECASE)
+        mods = "|".join(re.escape(n) for n in import_names(pkg))
+        return re.compile(rf"^\s*(?:from|import)\s+(?:{mods})\b", re.MULTILINE | re.IGNORECASE)
     name = re.escape(pkg)
     return re.compile(rf"""(?:require\(\s*|from\s+|import\s+)['"]{name}(?:/[^'"]*)?['"]""")
