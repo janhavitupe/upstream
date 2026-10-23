@@ -15,3 +15,8 @@ venv/
 # Local database
 data/
 *.db
+
+# CI
+.venv-ci/
+reports/
+.pytest_cache/

@@ -16,7 +16,7 @@ Module 1 works end to end from the dashboard at `/`. The PayPal integrations for
 | 1. Fund your upstream (OSS payouts) | 1 | **Done.** Dashboard: repo → dependencies → pay for work done × code size (idle projects get $0 and a warning) → AI reads recent commits and adjusts each share by ±5 pts max, with reasons → edit → approve → PayPal Payouts batch → live status; unclaimed/returned payouts re-queued to the next payout; shareable giving report at `/report/{id}` | Maintainer sign-up to receive payouts directly |
 | 1b. Pay your team (monthly payroll) | 1 | **Done.** Pick a repo you own, a monthly total and a pay day. Each month the top contributors (you excluded) are paid by work done (commits × lines changed) with an AI review of their commits (±5 pts). You approve the schedule once; a heads-up preview comes before each payday and can be skipped or edited, otherwise it pays automatically. Daily check via GitHub Actions (`.github/workflows/payroll-tick.yml`) | GitHub sign-in to prove repo ownership; contributors adding their own PayPal email; persistent database on Render |
 | 2. Get paid (invoices) | 2 | **Chat + chasing done.** "Bill Acme $500 for the API work, due next Friday" → the AI (tool calling) creates and sends a PayPal invoice at once, with Undo and the client's pay page. Overdue invoices are chased automatically until paid (friendly → firm → final, then a follow-up every N days; AI-written notes; missed stages skipped), with a global pause and per-client opt-out. A week after the final notice the invoice also **needs you**: did the client open it, a ready-to-send personal message, let them pay in parts (PayPal re-sends), a paper trail, write off. payments are detected (webhook or PayPal check) and stop chasing, with a tax / give-back note. Sandbox demo clock to show a month in a minute | Give-back: **done** (one click, or automatically N% of every payment, into an upstream pot that becomes the budget of an OSS payout you approve) · Reminders in your own writing style: **done** (paste 2–5 messages, preview generic vs your voice, tone level always wins) |
-| 3. Fair retainers (subscriptions) | 3 | Product → plan → subscription, pause/resume | Pre-renewal heads-up job |
+| 3. Fair retainers (subscriptions) | 3 | **Done.** "Set up a retainer for Acme, $300/month" by chat → PayPal subscription + approval link; work log ("log for Acme: shipped X"); 3 days before each renewal an AI heads-up (what's renewing, amount, what was delivered) with the client's page `/r/{code}` to pause in one click; payments, pauses and approvals picked up from PayPal; give-back from retainer payments | Heads-up email needs SMTP in `.env`; without it you copy/send it from the card |
 | 4. Pay the bill, not the person | 4 | Donation order paid directly to the hospital account + capture | Bill upload and AI verification |
 | Webhooks + storage | all | Receiver + signature verification; SQLite (`data/upstream.db`) stores analyses, payout batches/items and events | Invoice and chase state (Phase 2) |
 
@@ -37,6 +37,18 @@ Module 1 works end to end from the dashboard at `/`. The PayPal integrations for
 
 **Quick test without PayPal keys:** on the dashboard, analyze `pallets/flask` (or in `/docs`, run `POST /api/oss/analyze` with `{"repo": "pallets/flask", "budget": 100}`). It reads Flask's dependencies, scores each one's health on GitHub and proposes a fair split. Add a `GITHUB_TOKEN` to `.env` to avoid GitHub's 60 requests/hour limit.
 
+## Tests and CI
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest        # 37 tests, offline: no PayPal, GitHub or AI calls
+```
+
+The tests cover the money rules: approval before payouts, exact amounts, caps, no double payment,
+the AI's ±5-point limit, payroll timing (heads-up first, payday, never twice), and chasing (right
+stage, no spam, pause and opt-out, "needs you"). A [`Jenkinsfile`](Jenkinsfile) runs them on every
+push; setup in [`docs/jenkins.md`](docs/jenkins.md).
+
 ## Project structure
 ```
 backend/
@@ -49,7 +61,9 @@ backend/
   payroll.py           monthly team payroll: contributor work, split, schedule, scheduler
   payroll_api.py       payroll API routes
   chasing.py           automatic overdue reminders + payment detection
-  scheduler.py         one timer for payroll and chasing (POST /api/tick)
+  scheduler.py         one timer for payroll, chasing and retainers (POST /api/tick)
+  retainers.py         monthly retainers: PayPal subscriptions, heads-ups, pause/resume
+  retainer_portal.py   the client's renewal page (/r/{code})
 frontend/              dashboard (plain HTML/JS + AG Grid; card view on phones)
   paypal/              client (OAuth), payouts, invoices, subscriptions, orders, webhooks
   oss/                 github client, manifest parsing, health signals, scoring, analyzer
