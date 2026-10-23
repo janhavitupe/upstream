@@ -26,6 +26,8 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
+# A model that can read images (hospital bills in Module 4)
+LLM_VISION_MODEL = os.getenv("LLM_VISION_MODEL", "qwen/qwen3.8-27b").strip()
 
 # App
 # Render sets RENDER and RENDER_EXTERNAL_URL on every deploy
@@ -42,6 +44,7 @@ PAYROLL_MIN_EDIT_MINUTES = float(os.getenv("PAYROLL_MIN_EDIT_MINUTES", "5"))
 # Unclaimed payouts older than this are cancelled automatically and re-queued
 UNCLAIMED_GRACE_DAYS = float(os.getenv("UNCLAIMED_GRACE_DAYS", "14"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")
+BILLS_DIR = Path(os.getenv("BILLS_DIR", "").strip() or DATABASE_PATH.parent / "bills")  # never served publicly
 
 # Sandbox demo recipients
 DEMO_MAINTAINER_EMAILS = _list("DEMO_MAINTAINER_EMAILS")

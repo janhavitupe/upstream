@@ -147,3 +147,32 @@ def test_chat_creates_a_real_invoice():
         assert sent[0]["amount"] == 2 and sent[0]["client_name"] == "Acme"
     finally:
         _cancel_quietly(sent[0]["id"])
+
+
+@pytest.mark.uses_ai
+@pytest.mark.skipif(not config.llm_configured(), reason="LLM_API_KEY not set")
+def test_verified_cause_with_a_real_bill_and_donation_order(client, tmp_path, monkeypatch):
+    """The vision model reads a generated bill, code verifies it, and a donation order is
+    created in PayPal with the hospital as the payee."""
+    import io
+    from PIL import Image, ImageDraw, ImageFont
+    from backend import causes
+    monkeypatch.setattr(config, "BILLS_DIR", tmp_path)
+    try:
+        f, big = ImageFont.truetype("arial.ttf", 28), ImageFont.truetype("arialbd.ttf", 40)
+    except OSError:
+        f = big = ImageFont.load_default()
+    img = Image.new("RGB", (1000, 800), "white")
+    d = ImageDraw.Draw(img)
+    when = (date.today() - timedelta(days=10)).isoformat()
+    d.text((50, 50), "CITY GENERAL HOSPITAL", font=big, fill="black")
+    for i, line in enumerate([f"Patient: Sam Lee", f"Statement date: {when}", "Appendectomy   $2,800.00",
+                              "Pharmacy          $200.00", "AMOUNT DUE   $3,000.00"]):
+        d.text((50, 150 + 60 * i), line, font=f, fill="black")
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    c = causes.create("E2E cause", "End-to-end check", "Sam Lee", "City General Hospital",
+                      config.DEMO_HOSPITAL_EMAIL, 3000, buf.getvalue(), "image/png")
+    assert c["verdict"] == "verified", c["checks"]
+    link = causes.start_donation(c["token"], 2)
+    assert "sandbox.paypal.com" in link

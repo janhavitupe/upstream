@@ -147,6 +147,33 @@ CREATE TABLE IF NOT EXISTS work_log (
     note         TEXT NOT NULL,
     created_at   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS campaigns (
+    id              TEXT PRIMARY KEY,
+    token           TEXT NOT NULL UNIQUE,   -- public page: /c/{token}
+    title           TEXT NOT NULL,
+    story           TEXT NOT NULL,
+    patient_name    TEXT NOT NULL,          -- who the bill is for (shown only as initials)
+    provider_name   TEXT NOT NULL,          -- the hospital as the organizer named it
+    provider_email  TEXT NOT NULL,          -- the hospital's PayPal: donations go here
+    goal            REAL NOT NULL,
+    currency        TEXT NOT NULL,
+    bill_path       TEXT,                   -- private file, never served
+    bill_hash       TEXT,                   -- SHA-256: the same bill can't back two campaigns
+    extraction      TEXT,                   -- JSON the AI read from the bill
+    checks          TEXT,                   -- JSON [{key, label, ok, detail}]
+    verdict         TEXT NOT NULL,          -- verified | needs_review | unreadable
+    status          TEXT NOT NULL,          -- open | closed
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS donations (
+    order_id     TEXT PRIMARY KEY,          -- PayPal order id
+    campaign_id  TEXT NOT NULL REFERENCES campaigns(id),
+    amount       REAL NOT NULL,
+    status       TEXT NOT NULL,             -- CREATED | COMPLETED
+    created_at   TEXT NOT NULL,
+    captured_at  TEXT
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -568,6 +595,89 @@ def work_since(retainer_id: str, since_iso: str | None) -> list[dict]:
         args.append(since_iso)
     with connect() as c:
         return [dict(r) for r in c.execute(q + " ORDER BY id", args).fetchall()]
+
+
+# ---------- verified causes (Module 4) ----------
+
+def _campaign(row) -> dict:
+    d = dict(row)
+    d["extraction"] = json.loads(d["extraction"]) if d["extraction"] else None
+    d["checks"] = json.loads(d["checks"]) if d["checks"] else []
+    return d
+
+
+def save_campaign(c: dict):
+    ts = now()
+    with connect() as con:
+        con.execute("INSERT INTO campaigns (id, token, title, story, patient_name, provider_name, "
+                    "provider_email, goal, currency, bill_path, bill_hash, extraction, checks, "
+                    "verdict, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (c["id"], c["token"], c["title"], c["story"], c["patient_name"],
+                     c["provider_name"], c["provider_email"], c["goal"], c["currency"],
+                     c.get("bill_path"), c.get("bill_hash"), json.dumps(c.get("extraction")),
+                     json.dumps(c.get("checks") or []), c["verdict"], c.get("status", "open"), ts, ts))
+
+
+def update_campaign(campaign_id: str, **fields):
+    for k in ("extraction", "checks"):
+        if k in fields:
+            fields[k] = json.dumps(fields[k])
+    fields["updated_at"] = now()
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as con:
+        con.execute(f"UPDATE campaigns SET {cols} WHERE id = ?", (*fields.values(), campaign_id))
+
+
+def get_campaign(campaign_id: str) -> dict | None:
+    with connect() as con:
+        row = con.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    return _campaign(row) if row else None
+
+
+def campaign_by_token(token: str) -> dict | None:
+    with connect() as con:
+        row = con.execute("SELECT * FROM campaigns WHERE token = ?", (token,)).fetchone()
+    return _campaign(row) if row else None
+
+
+def list_campaigns() -> list[dict]:
+    with connect() as con:
+        return [_campaign(r) for r in con.execute(
+            "SELECT * FROM campaigns ORDER BY created_at DESC").fetchall()]
+
+
+def campaign_with_bill(bill_hash: str, exclude_id: str | None = None) -> dict | None:
+    with connect() as con:
+        row = con.execute("SELECT * FROM campaigns WHERE bill_hash = ? AND id != ?",
+                          (bill_hash, exclude_id or "")).fetchone()
+    return _campaign(row) if row else None
+
+
+def add_donation(order_id: str, campaign_id: str, amount: float):
+    with connect() as con:
+        con.execute("INSERT OR IGNORE INTO donations (order_id, campaign_id, amount, status, "
+                    "created_at) VALUES (?,?,?,?,?)", (order_id, campaign_id, amount, "CREATED", now()))
+
+
+def get_donation(order_id: str) -> dict | None:
+    with connect() as con:
+        row = con.execute("SELECT * FROM donations WHERE order_id = ?", (order_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def complete_donation(order_id: str) -> bool:
+    """True the first time a donation is marked paid (so it's counted once)."""
+    with connect() as con:
+        return con.execute("UPDATE donations SET status = 'COMPLETED', captured_at = ? "
+                           "WHERE order_id = ? AND status != 'COMPLETED'",
+                           (now(), order_id)).rowcount == 1
+
+
+def campaign_raised(campaign_id: str) -> tuple[float, int]:
+    with connect() as con:
+        row = con.execute("SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS n FROM donations "
+                          "WHERE campaign_id = ? AND status = 'COMPLETED'", (campaign_id,)).fetchone()
+    return round(row["total"], 2), row["n"]
 
 
 # ---------- upstream pot (give-back from client payments) ----------

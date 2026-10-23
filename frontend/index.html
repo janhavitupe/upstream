@@ -27,6 +27,7 @@
       <button class="tab active" role="tab" data-tab="fund" aria-selected="true">Fund your upstream</button>
       <button class="tab" role="tab" data-tab="team" aria-selected="false">Pay your team</button>
       <button class="tab" role="tab" data-tab="getpaid" aria-selected="false">Get paid</button>
+      <button class="tab" role="tab" data-tab="causes" aria-selected="false">Verified causes</button>
     </nav>
     <div id="tab-fund">
       <section class="card" id="analyze-card">
@@ -221,6 +222,40 @@
       </section>
     </div>
 
+    <div id="tab-causes" hidden>
+      <section class="card">
+        <h2>Pay the bill, not the person</h2>
+        <p class="muted">Raise money for someone's medical bill. Upload the bill: an AI reads it and
+          Upstream checks it against what you enter. Only verified campaigns take donations, and every
+          donation goes straight to the hospital's PayPal account.</p>
+        <form id="cause-form" class="causes-form">
+          <label class="field full"><span>Campaign title</span>
+            <input name="title" required maxlength="120" placeholder="Help Sam with an emergency surgery bill"></label>
+          <label class="field full"><span>Story</span>
+            <textarea name="story" required rows="3" maxlength="3000" placeholder="Who needs help and why"></textarea></label>
+          <label class="field"><span>Patient's name (as on the bill)</span>
+            <input name="patient_name" required placeholder="Sam Lee"></label>
+          <label class="field"><span>Hospital (as on the bill)</span>
+            <input name="provider_name" required placeholder="City General Hospital"></label>
+          <label class="field"><span>Hospital's PayPal email (donations go here)</span>
+            <input name="provider_email" id="cause-hospital-email" type="email" required></label>
+          <label class="field"><span>Amount needed (USD)</span>
+            <input name="goal" type="number" min="1" step="1" required placeholder="3000"></label>
+          <label class="field full"><span>The bill (photo or PDF)</span>
+            <input name="bill" type="file" accept="image/*,application/pdf" required></label>
+          <div class="full"><button class="btn primary" id="cause-submit" type="submit">Check the bill and create</button></div>
+        </form>
+        <div id="cause-progress" class="progress" hidden><div class="spinner" aria-hidden="true"></div>
+          <span>Reading the bill and checking it…</span></div>
+        <div id="cause-error" class="alert error" hidden></div>
+        <div id="cause-result"></div>
+      </section>
+      <section class="card">
+        <h2>Your campaigns</h2>
+        <ul class="list" id="cause-list"><li class="muted">No campaigns yet.</li></ul>
+      </section>
+    </div>
+
     <div id="tab-team" hidden>
       <section class="card" id="team-setup">
         <h2>Pay your team every month</h2>
@@ -279,6 +314,7 @@
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/getpaid.js"></script>
+  <script src="/static/causes.js"></script>
   <script src="/static/team.js"></script>
 </body>
 </html>

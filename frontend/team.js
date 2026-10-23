@@ -20,13 +20,14 @@ function showTab(name) {
   });
   document.querySelectorAll(".tab").forEach((b) => show($(`tab-${b.dataset.tab}`), b.dataset.tab === name));
   if (name === "fund") {
-    if (location.hash === "#team" || location.hash === "#getpaid") {
+    if (["#team", "#getpaid", "#causes"].includes(location.hash)) {
       history.replaceState(null, "", location.pathname);
     }
   } else {
     history.replaceState(null, "", `#${name}`);
   }
   if (name === "team") loadSchedules();
+  if (name === "causes" && typeof loadCauses === "function") loadCauses();
   if (name === "fund" && typeof loadPot === "function") loadPot();
   if (name === "getpaid" && typeof loadInvoices === "function") loadInvoices();
 }
@@ -337,4 +338,4 @@ setInterval(() => { if (!$("tab-team").hidden) refreshSoon(); }, 15000);
 let minEditMinutes = 5;
 api("/health").then((h) => { minEditMinutes = h.payroll_min_edit_minutes ?? 5; }).catch(() => {});
 
-if (location.hash === "#team" || location.hash === "#getpaid") showTab(location.hash.slice(1));
+if (["#team", "#getpaid", "#causes"].includes(location.hash)) showTab(location.hash.slice(1));

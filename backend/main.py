@@ -17,6 +17,7 @@ from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts
 from backend.paypal.client import PayPalError
+from backend import causes_api
 from backend.getpaid_api import router as getpaid_router
 from backend.payroll_api import router as payroll_router
 from backend.retainer_portal import router as portal_router
@@ -43,6 +44,7 @@ app.include_router(webhook_router)
 app.include_router(payroll_router)
 app.include_router(getpaid_router)
 app.include_router(portal_router)
+app.include_router(causes_api.router)
 FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
@@ -82,6 +84,7 @@ def health():
         "oss_monthly_cap": config.OSS_MONTHLY_CAP,
         "payroll_min_edit_minutes": config.PAYROLL_MIN_EDIT_MINUTES,
         "pot": round(sum(p["amount"] for p in db.open_pot()), 2),
+        "demo_hospital": config.DEMO_HOSPITAL_EMAIL,
         "demo": {
             "maintainers": config.DEMO_MAINTAINER_EMAILS,
             "client": config.DEMO_CLIENT_EMAIL,
@@ -428,6 +431,12 @@ def create_donation(body: DonationIn):
 def donation_return(token: str = ""):
     if not token:
         return _page("Missing order", "No order token was returned by PayPal.")
+    try:
+        campaign_page = causes_api.donation_return(token)  # a donation to a verified campaign
+    except PayPalError as e:
+        return _page("Capture failed", f"<pre>{e.body}</pre>")
+    if campaign_page:
+        return campaign_page
     try:
         cap = orders.capture(token)
     except PayPalError as e:

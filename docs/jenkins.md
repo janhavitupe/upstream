@@ -6,8 +6,8 @@ The pipeline is in [`Jenkinsfile`](../Jenkinsfile):
 |---|---|
 | Install | Creates a clean virtual environment and installs `requirements-dev.txt` |
 | Syntax check | Compiles every Python file |
-| Unit tests | Runs `pytest`: 132 tests covering every feature, offline (fake PayPal, AI and GitHub), ~10 s |
-| End-to-end | Every money flow against the **real PayPal sandbox** (9 tests, ~2 min). Runs **every night** by itself, or tick `RUN_E2E` |
+| Unit tests | Runs `pytest`: 167 tests covering every feature, offline (fake PayPal, AI and GitHub), ~10 s |
+| End-to-end | Every money flow against the **real PayPal sandbox** (10 tests, ~2 min). Runs **every night** by itself, or tick `RUN_E2E` |
 | Live smoke test | *Optional.* Calls the real PayPal sandbox with credentials stored in Jenkins |
 | Deploy to Render | *Optional, `main` only.* Triggers a Render deploy through a deploy hook |
 

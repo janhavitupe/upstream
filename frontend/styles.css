@@ -357,6 +357,19 @@ a { color: var(--accent); }
 .log-paid { background: var(--good-soft); border-radius: 8px; padding: 8px 10px !important; color: var(--good); }
 
 #voice-card { margin-top: 16px; }
+.progress-bar { height: 10px; border-radius: 999px; background: var(--bg); overflow: hidden; margin: 12px 0 6px; }
+.progress-bar span { display: block; height: 100%; background: var(--good); }
+.alert.good { background: var(--good-soft); color: var(--good); }
+.checks { list-style: none; padding: 0; margin: 10px 0; }
+.checks li { padding: 5px 0; }
+.donate-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.causes-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.causes-form .full { grid-column: 1 / -1; }
+.causes-form textarea, .causes-form input[type=file] { font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.campaign { display: block !important; padding: 14px 0; }
+.campaign .row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+@media (max-width: 720px) { .causes-form { grid-template-columns: 1fr; } }
 #retainers-card { margin-top: 16px; }
 #ret-list li.retainer { display: block; padding: 14px 0; }
 .retainer > .row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }

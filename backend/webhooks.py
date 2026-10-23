@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import chasing, config, db, requeue, retainers
+from backend import causes, chasing, config, db, requeue, retainers
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
@@ -63,6 +63,11 @@ async def paypal_webhook(request: Request):
         _apply_payout_event(etype, event.get("resource") or {})
         if etype.startswith("INVOICING.INVOICE."):
             _apply_invoice_event(etype, event.get("resource") or {})
+        if etype == "PAYMENT.CAPTURE.COMPLETED":  # a donation captured (e.g. donor closed the tab)
+            order_id = (((event.get("resource") or {}).get("supplementary_data") or {})
+                        .get("related_ids") or {}).get("order_id")
+            if order_id and db.get_donation(order_id):
+                causes.complete_donation(order_id, capture=False)
         if etype.startswith("BILLING.SUBSCRIPTION.") or etype == "PAYMENT.SALE.COMPLETED":
             res = event.get("resource") or {}
             sub_id = res.get("billing_agreement_id") if etype == "PAYMENT.SALE.COMPLETED" else res.get("id")

@@ -26,6 +26,9 @@ def _post(body: dict) -> dict:
     for attempt in range(3):
         r = requests.post(f"{config.LLM_BASE_URL}/chat/completions", json=body, timeout=90,
                           headers={"Authorization": f"Bearer {config.LLM_API_KEY}"})
+        if r.status_code in (500, 502, 503, 504) and attempt < 2:
+            time.sleep(2 + 3 * attempt)  # the provider had a hiccup: try again shortly
+            continue
         if r.status_code != 429 or attempt == 2:
             break
         # Free tiers limit tokens per minute and say how long to wait ("try again in 8.01s")
@@ -61,6 +64,20 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None, max_tokens: i
     if tools:
         body["tools"] = tools
     return _post(body)
+
+
+def vision(prompt: str, image: bytes, mime: str, *, max_tokens: int = 1500,
+           json_mode: bool = False) -> str:
+    """Ask the vision model about an image (e.g. a photographed bill)."""
+    import base64
+    body: dict = {"model": config.LLM_VISION_MODEL, "max_tokens": max_tokens, "temperature": 0,
+                  "messages": [{"role": "user", "content": [
+                      {"type": "text", "text": prompt},
+                      {"type": "image_url", "image_url": {
+                          "url": f"data:{mime};base64,{base64.b64encode(image).decode()}"}}]}]}
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+    return _post(body).get("content") or ""
 
 
 def list_models() -> list[str]:
