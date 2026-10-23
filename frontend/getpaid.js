@@ -62,6 +62,12 @@ async function sendChat(text) {
     for (const a of res.actions) {
       if (a.type === "invoice_sent" || a.type === "invoice_cancelled") {
         $("chat-log").insertAdjacentHTML("beforeend", invoiceCard(a.data, a.type));
+      } else if (a.type === "retainer_created") {
+        $("chat-log").insertAdjacentHTML("beforeend", retainerChatCard(a.data));
+      } else if (a.type === "retainer_changed") {
+        addMsg("bot", `<span class="muted small">${esc(a.data.client_name || "")} retainer: ${esc((RET_STATUS[a.data.status] || [a.data.status])[0])}.</span>`);
+      } else if (a.type === "work_logged") {
+        addMsg("bot", `<span class="muted small">Logged for ${esc(a.data.client)}: ${esc(a.data.note)}</span>`);
       } else if (a.type === "client_saved") {
         addMsg("bot", `<span class="muted small">Saved ${esc(a.data.name)} (${esc(a.data.email)}) as a client.</span>`);
       } else if (a.type === "chasing_changed") {
@@ -70,7 +76,7 @@ async function sendChat(text) {
       }
     }
     $("chat-log").scrollTop = $("chat-log").scrollHeight;
-    if (res.actions.length) loadInvoices();
+    if (res.actions.length) { loadInvoices(); loadRetainers(); }
   } catch (err) {
     typing.remove();
     addMsg("bot", `Sorry, that failed: ${esc(err.message)}`);
@@ -317,6 +323,7 @@ $("demo-clock").addEventListener("click", async (e) => {
   } finally {
     clockBusy = false;
     await loadInvoices();
+    loadRetainers();
     document.querySelectorAll("#demo-clock button").forEach((b) => { b.disabled = false; });
   }
 });
@@ -440,3 +447,117 @@ $("pot-pill").addEventListener("click", (e) => {
   showTab("fund");
   if (typeof loadPot === "function") loadPot();
 });
+
+// ---------- retainers ----------
+
+const RET_STATUS = { ACTIVE: ["Active", "SUCCESS"], SUSPENDED: ["Paused", "PENDING"],
+  APPROVAL_PENDING: ["Waiting for approval", "PENDING"], APPROVED: ["Approved", "PENDING"],
+  CANCELLED: ["Cancelled", "CANCELLED"] };
+
+function retainerCard(r) {
+  const [label, cls] = RET_STATUS[r.status] || [r.status, "PENDING"];
+  const who = esc(r.client_name || r.client_email);
+  let when = "";
+  if (r.status === "APPROVAL_PENDING") when = `Waiting for ${who} to approve it on PayPal. Send them the approval link.`;
+  else if (r.status === "ACTIVE" && r.next_billing) when = `Renews ${fmtDay(r.next_billing)} · heads-up to ${who} on ${fmtDay(r.next_heads_up)}`;
+  else if (r.status === "SUSPENDED") when = `Paused by ${r.paused_by === "client" ? who : "you"}: no renewal until it's resumed.`;
+  const headsUp = r.heads_up_note && r.heads_up_for === r.next_billing && r.status === "ACTIVE" ? `
+    <div class="draft-box"><div class="muted small">Heads-up for the ${fmtDay(r.next_billing)} renewal${r.emailed ? " (emailed)" : ", ready to send"}:</div>
+      <textarea readonly>${esc(r.heads_up_note)}</textarea>
+      <div class="btn-row"><button class="btn ghost" data-ract="copy-note">Copy</button>
+        <a class="btn ghost" href="mailto:${encodeURIComponent(r.client_email)}?subject=${encodeURIComponent(`Your ${r.service} retainer renews ${fmtDay(r.next_billing)}`)}&body=${encodeURIComponent(r.heads_up_note)}">Open in email</a></div></div>` : "";
+  const work = (r.work || []).map((w) => `<li>${esc(w.note)} <span class="muted small">${fmtDay(w.created_at.slice(0, 10))}</span></li>`).join("");
+  const live = r.status !== "CANCELLED";
+  return `
+    <li class="retainer" data-retainer="${esc(r.id)}">
+      <div class="row"><div><b>${who}</b> · ${esc(r.service)}
+          <div class="muted small">${esc(when)}</div></div>
+        <div><span class="num"><b>${money(r.amount)}</b>/month</span> <span class="status ${cls}">${esc(label)}</span></div></div>
+      <div class="btn-row">
+        ${r.status === "APPROVAL_PENDING" && r.approve_url ? `<button class="btn ghost" data-ract="copy-approve">Copy approval link</button>
+          <a class="btn ghost" href="${esc(r.approve_url)}" target="_blank" rel="noopener">Open approval page</a>` : ""}
+        <a class="btn ghost" href="${esc(r.client_url)}" target="_blank" rel="noopener">Client's page</a>
+        ${r.status === "ACTIVE" ? '<button class="btn ghost" data-ract="pause">Pause</button>' : ""}
+        ${r.status === "SUSPENDED" ? '<button class="btn ghost" data-ract="resume">Resume</button>' : ""}
+        ${live ? '<button class="btn ghost danger" data-ract="cancel">Cancel</button>' : ""}
+      </div>
+      ${headsUp}
+      ${live ? `
+      <div class="work-log"><div class="muted small">Delivered this month (goes into the next heads-up):</div>
+        ${work ? `<ul>${work}</ul>` : ""}
+        <form class="chat-form" data-work-form><input placeholder="e.g. shipped the search feature" aria-label="Work delivered" required>
+          <button class="btn" type="submit">Log</button></form></div>` : ""}
+    </li>`;
+}
+
+async function loadRetainers() {
+  if (document.activeElement?.closest?.(".retainer")) return;  // don't redraw while typing
+  try {
+    const rows = await api("/api/getpaid/retainers");
+    const active = rows.filter((r) => r.status === "ACTIVE");
+    $("ret-summary").textContent = active.length
+      ? `${money(active.reduce((s, r) => s + r.amount, 0))}/month from ${active.length} active` : "";
+    $("ret-list").innerHTML = rows.length ? rows.map(retainerCard).join("")
+      : '<li class="muted">No retainers yet. Try: "Set up a retainer for Acme, $300/month for API maintenance".</li>';
+  } catch { /* keep the last view */ }
+}
+
+$("ret-list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-ract]");
+  if (!btn) return;
+  const li = btn.closest("[data-retainer]");
+  const id = li.dataset.retainer;
+  const act = btn.dataset.ract;
+  if (act === "copy-note" || act === "copy-approve") {
+    const text = act === "copy-note" ? li.querySelector("textarea").value
+      : li.querySelector("a[href*='paypal']").href;
+    await navigator.clipboard.writeText(text).catch(() => {});
+    btn.textContent = "Copied ✓";
+    return;
+  }
+  if (act === "cancel" && !confirm("Cancel this retainer? PayPal stops all future charges.")) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/getpaid/retainers/${encodeURIComponent(id)}/${act}`, { method: "POST" });
+  } catch (err) {
+    alert(err.message);
+  }
+  loadRetainers();
+  loadInvoices();
+});
+
+$("ret-list").addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-work-form]");
+  if (!form) return;
+  e.preventDefault();
+  const input = form.querySelector("input");
+  const id = form.closest("[data-retainer]").dataset.retainer;
+  try {
+    await api(`/api/getpaid/retainers/${encodeURIComponent(id)}/work`, {
+      method: "POST", body: JSON.stringify({ note: input.value }) });
+    input.value = "";
+  } catch (err) {
+    alert(err.message);
+  }
+  input.blur();
+  loadRetainers();
+});
+
+function retainerChatCard(d) {
+  const who = esc(d.client_name || d.client_email);
+  return `
+    <div class="inv-card">
+      <div class="row"><div><b>Retainer</b> · ${who}<div class="muted small">${esc(d.service)}</div></div>
+        <span class="amount-big">${money(d.amount)}<span class="muted small">/month</span></span></div>
+      <div class="muted small" style="margin-top:6px">${d.status === "APPROVAL_PENDING"
+        ? `PayPal needs ${who} to approve it once. Send them the approval link; after that it renews on its own, with a heads-up before every renewal.`
+        : `Status: ${esc((RET_STATUS[d.status] || [d.status])[0])}`}</div>
+      <div class="btn-row">
+        ${d.approve_url && d.status === "APPROVAL_PENDING" ? `<a class="btn ghost" href="${esc(d.approve_url)}" target="_blank" rel="noopener">Approval link</a>` : ""}
+        <a class="btn ghost" href="${esc(d.client_url)}" target="_blank" rel="noopener">Client's page</a>
+      </div>
+    </div>`;
+}
+
+setInterval(() => { if (!$("tab-getpaid").hidden) loadRetainers(); }, 20000);
+loadRetainers();

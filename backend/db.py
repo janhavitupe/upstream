@@ -122,6 +122,31 @@ CREATE TABLE IF NOT EXISTS pot (
     created_at        TEXT NOT NULL,
     used_by_analysis  TEXT                 -- set when an approved OSS payout spends it
 );
+CREATE TABLE IF NOT EXISTS retainers (
+    id             TEXT PRIMARY KEY,      -- PayPal subscription id
+    client_name    TEXT,
+    client_email   TEXT NOT NULL,
+    service        TEXT NOT NULL,
+    amount         REAL NOT NULL,         -- per month
+    currency       TEXT NOT NULL,
+    plan_id        TEXT NOT NULL,
+    status         TEXT NOT NULL,         -- APPROVAL_PENDING, ACTIVE, SUSPENDED, CANCELLED
+    approve_url    TEXT,                  -- the client approves the subscription here
+    token          TEXT NOT NULL UNIQUE,  -- the client's renewal page: /r/{token}
+    next_billing   TEXT,                  -- YYYY-MM-DD
+    last_payment   TEXT,                  -- PayPal time of the last charge seen
+    heads_up_for   TEXT,                  -- the renewal date the last heads-up was about
+    heads_up_note  TEXT,
+    paused_by      TEXT,                  -- "client" or "you"
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS work_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    retainer_id  TEXT NOT NULL REFERENCES retainers(id),
+    note         TEXT NOT NULL,
+    created_at   TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -476,6 +501,66 @@ def set_setting(key: str, value):
     with connect() as c:
         c.execute("INSERT INTO settings (key, value) VALUES (?,?) "
                   "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, json.dumps(value)))
+
+
+# ---------- retainers ----------
+
+def save_retainer(r: dict):
+    ts = now()
+    with connect() as c:
+        c.execute("INSERT INTO retainers (id, client_name, client_email, service, amount, currency, "
+                  "plan_id, status, approve_url, token, next_billing, created_at, updated_at) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (r["id"], r.get("client_name"), r["client_email"], r["service"], r["amount"],
+                   r["currency"], r["plan_id"], r["status"], r.get("approve_url"), r["token"],
+                   r.get("next_billing"), ts, ts))
+
+
+def get_retainer(retainer_id: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM retainers WHERE id = ?", (retainer_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def retainer_by_token(token: str) -> dict | None:
+    with connect() as c:
+        row = c.execute("SELECT * FROM retainers WHERE token = ?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_retainers(include_cancelled: bool = True) -> list[dict]:
+    q = "SELECT * FROM retainers" + ("" if include_cancelled else " WHERE status != 'CANCELLED'")
+    with connect() as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY created_at DESC").fetchall()]
+
+
+def update_retainer(retainer_id: str, **fields):
+    fields["updated_at"] = now()
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE retainers SET {cols} WHERE id = ?", (*fields.values(), retainer_id))
+
+
+def add_work(retainer_id: str, note: str) -> dict:
+    """Log delivered work once: the same note for the same retainer isn't added twice."""
+    note = note.strip()[:500]
+    with connect() as c:
+        same = c.execute("SELECT * FROM work_log WHERE retainer_id = ? AND lower(note) = lower(?)",
+                         (retainer_id, note)).fetchone()
+        if same:
+            return {**dict(same), "duplicate": True}
+        cur = c.execute("INSERT INTO work_log (retainer_id, note, created_at) VALUES (?,?,?)",
+                        (retainer_id, note, now()))
+        return dict(c.execute("SELECT * FROM work_log WHERE id = ?", (cur.lastrowid,)).fetchone())
+
+
+def work_since(retainer_id: str, since_iso: str | None) -> list[dict]:
+    q, args = "SELECT * FROM work_log WHERE retainer_id = ?", [retainer_id]
+    if since_iso:
+        q += " AND created_at >= ?"
+        args.append(since_iso)
+    with connect() as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY id", args).fetchall()]
 
 
 # ---------- upstream pot (give-back from client payments) ----------

@@ -52,6 +52,14 @@ DEMO_CLIENTS = dict(pair.split("=", 1) for pair in _list("DEMO_CLIENTS") if "=" 
     {"Acme": DEMO_CLIENT_EMAIL} if DEMO_CLIENT_EMAIL else {})
 INVOICE_MAX = float(os.getenv("INVOICE_MAX", "25000"))  # sanity cap on one chat-made invoice
 
+# Optional email for retainer heads-ups (e.g. Gmail: smtp.gmail.com, 587, an app password).
+# Without it, heads-ups are ready on the dashboard for you to send.
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587") or 587)
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
+
 
 def paypal_configured() -> bool:
     return bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)

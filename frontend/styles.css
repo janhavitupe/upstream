@@ -357,6 +357,11 @@ a { color: var(--accent); }
 .log-paid { background: var(--good-soft); border-radius: 8px; padding: 8px 10px !important; color: var(--good); }
 
 #voice-card { margin-top: 16px; }
+#retainers-card { margin-top: 16px; }
+#ret-list li.retainer { display: block; padding: 14px 0; }
+.retainer > .row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.work-log { margin-top: 10px; }
+.work-log ul { margin: 4px 0 8px; padding-left: 18px; font-size: 14px; }
 .inline-num { width: 52px; font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--border); border-radius: 6px; padding: 1px 4px; }
 .pot-pill { margin: 4px 0 8px 26px; font-size: 13px; color: var(--good); }

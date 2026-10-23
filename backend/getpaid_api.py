@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend import chasing, config, db
+from backend import chasing, config, db, retainers
 from backend.agent import billing
 from backend.agent.llm import LLMError, complete
 from backend.paypal import invoices as pp_invoices
@@ -200,7 +200,7 @@ def set_followup(body: FollowupIn):
 @router.get("/state")
 def state():
     """Switches, the demo clock and the chasing / payment log for the Get paid tab."""
-    log = db.list_events(20, prefixes=("UPSTREAM.CHASE.", "UPSTREAM.INVOICE."))
+    log = db.list_events(20, prefixes=("UPSTREAM.CHASE.", "UPSTREAM.INVOICE.", "UPSTREAM.RETAINER."))
     pot = db.open_pot()
     return {"chasing_paused": bool(db.get_setting("chasing_paused", False)),
             "pot": {"balance": round(sum(p["amount"] for p in pot), 2), "count": len(pot)},
@@ -236,17 +236,19 @@ class ClockIn(BaseModel):
 
 @router.post("/demo-clock")
 def demo_clock(body: ClockIn):
-    """Sandbox only: pretend today is N days later, then run chasing at once."""
+    """Sandbox only: pretend today is N days later, then run chasing and retainers at once."""
     if "sandbox" not in config.PAYPAL_BASE:
         raise HTTPException(400, "The demo clock only works in the PayPal sandbox.")
     db.set_setting("demo_offset_days", body.days)
-    return {"actions": chasing.tick(force_refresh=True), **state()}
+    return {"actions": chasing.tick(force_refresh=True) + retainers.tick(force_refresh=True),
+            **state()}
 
 
 @router.post("/check")
 def check_now():
     """Check PayPal for payments and send any reminders that are due, right now."""
-    return {"actions": chasing.tick(force_refresh=True), **state()}
+    return {"actions": chasing.tick(force_refresh=True) + retainers.tick(force_refresh=True),
+            **state()}
 
 
 @router.post("/invoices/{invoice_id}/cancel")
@@ -316,3 +318,51 @@ def preview_voice(body: PreviewIn):
             "generic": chasing.write_reminder(inv, body.tone, days, voice=[]),
             "yours": chasing.write_reminder(inv, body.tone, days, voice=samples)
             if samples else None}
+
+
+# ---------- retainers ----------
+
+def _retainer_view(r: dict) -> dict:
+    return {**retainers.view(r), "work": db.work_since(r["id"], None)[-10:],
+            "emailed": bool(config.SMTP_HOST)}
+
+
+@router.get("/retainers")
+def list_retainers():
+    return [_retainer_view(r) for r in db.list_retainers()]
+
+
+def _retainer(retainer_id: str) -> dict:
+    r = db.get_retainer(retainer_id)
+    if not r:
+        raise HTTPException(404, "Retainer not found.")
+    return r
+
+
+# Registered before the generic /{action} route, which would otherwise match "work"
+class WorkIn(BaseModel):
+    note: str = Field(..., min_length=3, max_length=500)
+
+
+@router.post("/retainers/{retainer_id}/work")
+def log_work(retainer_id: str, body: WorkIn):
+    """What you delivered this month; it goes into the next heads-up."""
+    _retainer(retainer_id)
+    db.add_work(retainer_id, body.note)
+    return _retainer_view(db.get_retainer(retainer_id))
+
+
+@router.post("/retainers/{retainer_id}/{action}")
+def change_retainer(retainer_id: str, action: str):
+    _retainer(retainer_id)
+    try:
+        r = {"pause": lambda: retainers.pause(retainer_id, by="you"),
+             "resume": lambda: retainers.resume(retainer_id, by="you"),
+             "cancel": lambda: retainers.cancel(retainer_id),
+             "refresh": lambda: (retainers.refresh(retainer_id), db.get_retainer(retainer_id))[1],
+             }[action]()
+    except KeyError:
+        raise HTTPException(404, "Unknown action.")
+    except retainers.RetainerError as e:
+        raise HTTPException(409, str(e))
+    return _retainer_view(db.get_retainer(retainer_id))

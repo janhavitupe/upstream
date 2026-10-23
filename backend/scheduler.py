@@ -1,4 +1,5 @@
-"""One background timer for everything that runs on its own: payroll and invoice chasing.
+"""One background timer for everything that runs on its own: payroll, invoice chasing and
+retainer heads-ups.
 
 While the app is awake it ticks every minute; on a sleeping free host the daily GitHub
 Action calls POST /api/tick. Every job is safe to run any number of times.
@@ -7,12 +8,13 @@ from __future__ import annotations
 
 import threading
 
-from backend import chasing, payroll
+from backend import chasing, payroll, retainers
 
 
 def tick_all() -> dict:
     out = {}
-    for name, job in (("payroll", payroll.tick), ("chasing", chasing.tick)):
+    for name, job in (("payroll", payroll.tick), ("chasing", chasing.tick),
+                      ("retainers", retainers.tick)):
         try:
             out[name] = job()
         except Exception as e:  # one job failing must not stop the other

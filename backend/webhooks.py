@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import chasing, config, db, requeue
+from backend import chasing, config, db, requeue, retainers
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
@@ -63,6 +63,11 @@ async def paypal_webhook(request: Request):
         _apply_payout_event(etype, event.get("resource") or {})
         if etype.startswith("INVOICING.INVOICE."):
             _apply_invoice_event(etype, event.get("resource") or {})
+        if etype.startswith("BILLING.SUBSCRIPTION.") or etype == "PAYMENT.SALE.COMPLETED":
+            res = event.get("resource") or {}
+            sub_id = res.get("billing_agreement_id") if etype == "PAYMENT.SALE.COMPLETED" else res.get("id")
+            if sub_id and db.get_retainer(sub_id):
+                retainers.refresh(sub_id)  # PayPal is the source of truth: re-read it
     print(f"[webhook] {etype} verified={verified}")
     return {"ok": True}
 

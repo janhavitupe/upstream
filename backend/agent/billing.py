@@ -9,7 +9,7 @@ import json
 import re
 from datetime import date, timedelta
 
-from backend import config, db
+from backend import config, db, retainers
 from backend.paypal import invoices as pp_invoices
 from backend.paypal.client import PayPalError
 
@@ -30,6 +30,11 @@ Rules:
   coming Friday; "next Friday" is the Friday of next week. If no due date is given, leave it
   out (it defaults to 14 days).
 - Keep amounts exactly as stated. Currency defaults to USD.
+- Monthly work ("retainer", "every month", "per month") is a retainer: call create_retainer.
+  PayPal needs the client to approve it once; say you've made the approval link (it's on the
+  card). Before every renewal Upstream sends the client a heads-up and lets them pause.
+- "log for Acme: shipped X" or "I did X for Acme this month" means log_work. Log only what the
+  latest message says; never re-log work from earlier messages.
 - If a request is ambiguous (which invoice, which client, what amount), ask one short question.
 - After acting, reply in one short sentence. Don't repeat details shown on the card, and don't
   add filler like "let me know if you need anything else"."""
@@ -65,6 +70,35 @@ TOOLS = [
         "description": "Cancel an unpaid invoice (by its number, or the latest open one for a client).",
         "parameters": {"type": "object", "properties": {
             "invoice_number": {"type": "string"}, "client_name": {"type": "string"}}}}},
+    {"type": "function", "function": {
+        "name": "create_retainer",
+        "description": "Set up a monthly retainer (PayPal subscription) for a client.",
+        "parameters": {"type": "object", "properties": {
+            "client_name": {"type": "string"},
+            "service": {"type": "string", "description": "What the retainer covers"},
+            "monthly_amount": {"type": "number"},
+            "start_date": {"type": "string", "description": "YYYY-MM-DD of the first charge, "
+                                                            "from the calendar; omit for now"},
+            "currency": {"type": "string"}},
+            "required": ["client_name", "service", "monthly_amount"]}}},
+    {"type": "function", "function": {
+        "name": "log_work",
+        "description": "Record work delivered under a client's retainer (shown in the heads-up "
+                       "before renewal).",
+        "parameters": {"type": "object", "properties": {
+            "client_name": {"type": "string"}, "note": {"type": "string"}},
+            "required": ["client_name", "note"]}}},
+    {"type": "function", "function": {
+        "name": "change_retainer",
+        "description": "Pause, resume or cancel a client's retainer.",
+        "parameters": {"type": "object", "properties": {
+            "client_name": {"type": "string"},
+            "action": {"type": "string", "enum": ["pause", "resume", "cancel"]}},
+            "required": ["client_name", "action"]}}},
+    {"type": "function", "function": {
+        "name": "list_retainers",
+        "description": "List retainers with status, monthly amount and next renewal.",
+        "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "set_chasing",
         "description": "Turn automatic overdue reminders on or off, for everyone or one client.",
@@ -184,10 +218,66 @@ def set_chasing(enabled: bool, client_name: str | None = None) -> dict:
     return {"everyone": True, "chasing": enabled}
 
 
-HANDLERS = {"create_invoice": create_invoice, "add_client": add_client,
+def _retainer_for(client_name: str) -> dict:
+    c = client_name.lower()
+    rows = [r for r in db.list_retainers(False)
+            if c in (r["client_name"] or "").lower() or c in r["client_email"].lower()]
+    if not rows:
+        raise ToolError(f"No retainer for '{client_name}'.")
+    if len(rows) > 1:
+        raise ToolError("More than one retainer matches: " + ", ".join(
+            f"{r['client_name']} ({r['service']})" for r in rows) + ". Ask which one.")
+    return rows[0]
+
+
+def create_retainer(client_name: str, service: str, monthly_amount: float,
+                    start_date: str | None = None, currency: str = "USD") -> dict:
+    client = db.find_client(client_name)
+    if not client:
+        raise UnknownClient(client_name)
+    try:
+        return retainers.create(client, service, float(monthly_amount), start_date,
+                                (currency or "USD").upper()[:3])
+    except retainers.RetainerError as e:
+        raise ToolError(str(e))
+
+
+def log_work(client_name: str, note: str) -> dict:
+    r = _retainer_for(client_name)
+    entry = db.add_work(r["id"], note)
+    if entry.get("duplicate"):
+        raise ToolError("That work is already logged; nothing to add.")
+    return {"client": r["client_name"], "service": r["service"], "note": entry["note"]}
+
+
+def change_retainer(client_name: str, action: str) -> dict:
+    r = _retainer_for(client_name)
+    try:
+        if action == "pause":
+            return retainers.pause(r["id"], by="you")
+        if action == "resume":
+            return retainers.resume(r["id"], by="you")
+        if action == "cancel":
+            return retainers.cancel(r["id"])
+    except retainers.RetainerError as e:
+        raise ToolError(str(e))
+    raise ToolError(f"Unknown action '{action}'.")
+
+
+def list_retainers() -> list[dict]:
+    return [{"client": r["client_name"], "service": r["service"], "monthly": r["amount"],
+             "currency": r["currency"], "status": r["status"], "next_renewal": r["next_billing"]}
+            for r in db.list_retainers(False)]
+
+
+HANDLERS = {"create_retainer": create_retainer, "log_work": log_work,
+            "change_retainer": change_retainer, "list_retainers": list_retainers,
+            "create_invoice": create_invoice, "add_client": add_client,
             "list_invoices": list_invoices, "cancel_invoice": cancel_invoice,
             "set_chasing": set_chasing}
-CARD_TOOLS = {"create_invoice": "invoice_sent", "cancel_invoice": "invoice_cancelled",
+CARD_TOOLS = {"create_retainer": "retainer_created", "change_retainer": "retainer_changed",
+              "log_work": "work_logged",
+              "create_invoice": "invoice_sent", "cancel_invoice": "invoice_cancelled",
               "set_chasing": "chasing_changed"}
 
 
@@ -239,7 +329,7 @@ def run(history: list[dict], user_message: str, pending: dict | None = None) -> 
         actions.append({"type": "client_saved", "data": client})
         messages.append({"role": "system", "content": (
             f"Saved {client['name']}'s email ({client['email']}). Now complete the user's "
-            f"earlier request with create_invoice: \"{str(pending.get('request', ''))[:500]}\"")})
+            f"earlier request: \"{str(pending.get('request', ''))[:500]}\"")})
     next_pending = None
     for _ in range(MAX_STEPS):
         try:
@@ -263,7 +353,7 @@ def run(history: list[dict], user_message: str, pending: dict | None = None) -> 
                 result = HANDLERS[name](**args)
                 if name in CARD_TOOLS:
                     actions.append({"type": CARD_TOOLS[name], "data": result})
-                if name == "create_invoice":
+                if name in ("create_invoice", "create_retainer"):
                     next_pending = None
                 content = json.dumps({"ok": True, "result": result})
             except UnknownClient as e:

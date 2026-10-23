@@ -30,7 +30,9 @@ def create_plan(product_id: str, name: str, monthly_price: float, currency: str 
     return paypal.request("POST", "/v1/billing/plans", json=body)
 
 
-def create_subscription(plan_id: str, subscriber_email: str | None = None) -> dict:
+def create_subscription(plan_id: str, subscriber_email: str | None = None,
+                        start_time: str | None = None) -> dict:
+    """start_time: ISO time of the first charge (must be in the future); omit to start now."""
     body: dict = {
         "plan_id": plan_id,
         "application_context": {
@@ -43,6 +45,8 @@ def create_subscription(plan_id: str, subscriber_email: str | None = None) -> di
     }
     if subscriber_email:
         body["subscriber"] = {"email_address": subscriber_email}
+    if start_time:
+        body["start_time"] = start_time
     return paypal.request("POST", "/v1/billing/subscriptions", json=body)
 
 

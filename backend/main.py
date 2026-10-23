@@ -8,17 +8,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import config, db, report, requeue, scheduler
+from backend import config, db, report, requeue, retainers, scheduler
 from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
-from backend.paypal import invoices, orders, payouts, subscriptions
+from backend.paypal import invoices, orders, payouts
 from backend.paypal.client import PayPalError
 from backend.getpaid_api import router as getpaid_router
 from backend.payroll_api import router as payroll_router
+from backend.retainer_portal import router as portal_router
 from backend.webhooks import router as webhook_router
 
 
@@ -41,6 +42,7 @@ app = FastAPI(
 app.include_router(webhook_router)
 app.include_router(payroll_router)
 app.include_router(getpaid_router)
+app.include_router(portal_router)
 FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
@@ -391,47 +393,15 @@ def cancel_invoice(invoice_id: str):
     return {"ok": True, "invoice_id": invoice_id}
 
 
-# ---------- Module 3: Fair retainers (subscriptions) ----------
-
-class RetainerIn(BaseModel):
-    client_email: str
-    service_name: str = Field(..., examples=["Monthly dev retainer"])
-    monthly_price: float = Field(..., gt=0)
-
-
-@app.post("/api/retainers", tags=["3 · Retainers"])
-def create_retainer(body: RetainerIn):
-    product = subscriptions.create_product(body.service_name)
-    plan = subscriptions.create_plan(product["id"], f"{body.service_name}: "
-                                     f"${body.monthly_price:.2f}/month", body.monthly_price)
-    sub = subscriptions.create_subscription(plan["id"], body.client_email)
-    return {"subscription_id": sub.get("id"), "status": sub.get("status"),
-            "plan_id": plan["id"], "client_approval_link": subscriptions.approve_link(sub)}
-
-
-@app.get("/api/retainers/{sub_id}", tags=["3 · Retainers"])
-def get_retainer(sub_id: str):
-    sub = subscriptions.get(sub_id)
-    return {"id": sub_id, "status": sub.get("status"),
-            "next_billing_time": subscriptions.next_billing_time(sub)}
-
-
-@app.post("/api/retainers/{sub_id}/pause", tags=["3 · Retainers"])
-def pause_retainer(sub_id: str):
-    subscriptions.suspend(sub_id)
-    return {"ok": True}
-
-
-@app.post("/api/retainers/{sub_id}/resume", tags=["3 · Retainers"])
-def resume_retainer(sub_id: str):
-    subscriptions.activate(sub_id)
-    return {"ok": True}
-
+# ---------- Module 3: Fair retainers (routes live in getpaid_api / retainer_portal) ----------
 
 @app.get("/retainer/return", include_in_schema=False, response_class=HTMLResponse)
 def retainer_return(subscription_id: str = ""):
-    return _page("Retainer approved", f"Subscription <code>{subscription_id}</code> is set up. "
-                 "You'll get a heads-up before every renewal.")
+    r = db.get_retainer(subscription_id) if subscription_id else None
+    if r:
+        retainers.refresh(r["id"])
+        return RedirectResponse(f"/r/{r['token']}")
+    return _page("Retainer approved", "Thanks! You'll get a heads-up before every renewal.")
 
 
 @app.get("/retainer/cancel", include_in_schema=False, response_class=HTMLResponse)
