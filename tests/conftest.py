@@ -22,6 +22,7 @@ os.environ.update({
     "DATABASE_PATH": str(Path(tempfile.mkdtemp()) / "test.db"),
     "PAYPAL_BASE": "https://api-m.sandbox.paypal.com",  # tests never touch live PayPal
     "PAYROLL_SCHEDULER": "0", "RENDER": "", "SMTP_HOST": "", "PAYPAL_WEBHOOK_ID": "",
+    "DATABASE_URL": "",  # never the real database: tests wipe theirs before every test
     "OSS_MONTHLY_CAP": "500", "PAYROLL_MONTHLY_CAP": "2000",
 })
 if not E2E:
@@ -34,10 +35,24 @@ if not E2E:
 from backend import config, db  # noqa: E402
 
 
+# Optional: run the whole suite on PostgreSQL too, e.g.
+#   TEST_DATABASE_URL=postgresql://user:pw@localhost/upstream_test python -m pytest
+TEST_PG = os.environ.get("TEST_DATABASE_URL", "").strip()
+if TEST_PG and "test" not in TEST_PG.rsplit("/", 1)[-1].split("?")[0]:
+    raise RuntimeError("TEST_DATABASE_URL must point at a database whose name contains 'test': "
+                       "every test wipes it.")
+
+
 @pytest.fixture(autouse=True)
 def fresh_db(tmp_path, monkeypatch):
-    """Every test gets its own empty database."""
+    """Every test gets its own empty database (a temp SQLite file, or a wiped test Postgres)."""
     monkeypatch.setattr(config, "DATABASE_PATH", tmp_path / "upstream.db")
+    monkeypatch.setattr(config, "DATABASE_URL", TEST_PG)
+    if TEST_PG:
+        import psycopg
+        with psycopg.connect(TEST_PG, autocommit=True) as c:
+            c.execute("DROP SCHEMA public CASCADE")
+            c.execute("CREATE SCHEMA public")
     db.init()
     yield
 

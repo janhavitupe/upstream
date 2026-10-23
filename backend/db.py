@@ -1,11 +1,16 @@
-"""SQLite storage: saved analyses, payout batches + items, and webhook events.
+"""Storage for everything Upstream remembers.
 
-One short-lived connection per call keeps it safe under FastAPI's thread pool.
+SQLite (a file) locally and in tests; PostgreSQL when DATABASE_URL is set, e.g. a free Neon
+database, so data survives deploys on hosts whose disk is wiped. Queries are written once in
+SQLite's dialect and translated for PostgreSQL in _PgConnection. One short-lived connection (or
+pooled connection) per call keeps it safe under FastAPI's thread pool.
 """
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -81,7 +86,7 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
 );
 CREATE TABLE IF NOT EXISTS clients (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name        TEXT NOT NULL UNIQUE,     -- compared case-insensitively in queries
     email       TEXT NOT NULL,
     dont_chase  INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
@@ -190,8 +195,68 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def using_postgres() -> bool:
+    return bool(config.DATABASE_URL)
+
+
+class _PgConnection:
+    """Gives a psycopg connection the sqlite3 interface the queries below use."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    @staticmethod
+    def translate(sql: str) -> str:
+        if re.match(r"\s*INSERT OR IGNORE\b", sql, re.I):
+            sql = re.sub(r"INSERT OR IGNORE", "INSERT", sql, count=1, flags=re.I) + " ON CONFLICT DO NOTHING"
+        return sql.replace("%", "%%").replace("?", "%s")
+
+    def execute(self, sql: str, args=()):
+        return self.conn.execute(self.translate(sql), tuple(args))
+
+    def executemany(self, sql: str, rows):
+        with self.conn.cursor() as cur:
+            cur.executemany(self.translate(sql), [tuple(r) for r in rows])
+
+    def executescript(self, script: str):
+        for stmt in script.split(";"):
+            if stmt.strip():
+                self.conn.execute(_pg_ddl(stmt))
+
+    def rollback(self):
+        self.conn.rollback()
+
+
+def _pg_ddl(sql: str) -> str:
+    sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+    return re.sub(r"\bREAL\b", "DOUBLE PRECISION", sql)  # Postgres REAL is 4 bytes: bad for money
+
+
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def _pg_pool():
+    global _pool
+    with _pool_lock:
+        if _pool is None or _pool.conninfo != config.DATABASE_URL:
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+            if _pool is not None:
+                _pool.close()
+            # check= drops connections a sleeping serverless database (Neon) has closed
+            _pool = ConnectionPool(config.DATABASE_URL, min_size=1, max_size=5, open=True,
+                                   kwargs={"row_factory": dict_row},
+                                   check=ConnectionPool.check_connection, max_idle=300)
+        return _pool
+
+
 @contextmanager
 def connect():
+    if using_postgres():
+        with _pg_pool().connection() as conn:  # commits on success, rolls back on error
+            yield _PgConnection(conn)
+        return
     conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -210,18 +275,31 @@ NEW_COLUMNS = {"invoices": [("last_reminder_day", "TEXT"), ("final_day", "TEXT")
                             ("written_off", "INTEGER NOT NULL DEFAULT 0")]}
 
 
+def _columns(c, table: str) -> set[str]:
+    if using_postgres():
+        rows = c.execute("SELECT column_name AS name FROM information_schema.columns "
+                         "WHERE table_name = ?", (table,)).fetchall()
+    else:
+        rows = c.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r["name"] for r in rows}
+
+
 def _migrate(c):
     for table, cols in NEW_COLUMNS.items():
-        have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+        have = _columns(c, table)
         for name, decl in cols:
             if name not in have:
+                if using_postgres():
+                    decl = _pg_ddl(decl)
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def init():
-    config.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not using_postgres():
+        config.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as c:
-        c.execute("PRAGMA journal_mode = WAL")
+        if not using_postgres():
+            c.execute("PRAGMA journal_mode = WAL")
         c.executescript(SCHEMA)
         _migrate(c)
         for name, email in config.DEMO_CLIENTS.items():  # sandbox clients, so chat works at once
@@ -442,19 +520,23 @@ def update_run(run_id: str, *, expect_status: str | None = None, **fields) -> bo
 # ---------- clients, invoices, settings ----------
 
 def upsert_client(name: str, email: str) -> dict:
+    """Add a client, or update the email of one with the same name (any capitalisation)."""
     with connect() as c:
-        c.execute("INSERT INTO clients (name, email, created_at) VALUES (?,?,?) "
-                  "ON CONFLICT(name) DO UPDATE SET email = excluded.email",
-                  (name.strip(), email.strip(), now()))
+        row = c.execute("SELECT id FROM clients WHERE lower(name) = lower(?)", (name.strip(),)).fetchone()
+        if row:
+            c.execute("UPDATE clients SET email = ? WHERE id = ?", (email.strip(), row["id"]))
+        else:
+            c.execute("INSERT INTO clients (name, email, created_at) VALUES (?,?,?)",
+                      (name.strip(), email.strip(), now()))
     return find_client(name)
 
 
 def find_client(name: str) -> dict | None:
     """Exact name first, then a unique partial match ("acme" -> "Acme Corp")."""
     with connect() as c:
-        row = c.execute("SELECT * FROM clients WHERE name = ?", (name.strip(),)).fetchone()
+        row = c.execute("SELECT * FROM clients WHERE lower(name) = lower(?)", (name.strip(),)).fetchone()
         if not row:
-            rows = c.execute("SELECT * FROM clients WHERE name LIKE ?",
+            rows = c.execute("SELECT * FROM clients WHERE lower(name) LIKE lower(?)",
                              (f"%{name.strip()}%",)).fetchall()
             row = rows[0] if len(rows) == 1 else None
     return dict(row) if row else None
@@ -467,16 +549,21 @@ def list_clients() -> list[dict]:
 
 def set_client_chase(name: str, dont_chase: bool) -> bool:
     with connect() as c:
-        return c.execute("UPDATE clients SET dont_chase = ? WHERE name = ?",
+        return c.execute("UPDATE clients SET dont_chase = ? WHERE lower(name) = lower(?)",
                          (int(dont_chase), name)).rowcount == 1
 
 
 def save_invoice(inv: dict):
     ts = now()
     with connect() as c:
-        c.execute("INSERT OR REPLACE INTO invoices (id, number, client_name, client_email, amount, "
+        c.execute("INSERT INTO invoices (id, number, client_name, client_email, amount, "
                   "currency, due_date, status, payer_url, items, created_at, updated_at) "
-                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                  "number = excluded.number, client_name = excluded.client_name, "
+                  "client_email = excluded.client_email, amount = excluded.amount, "
+                  "currency = excluded.currency, due_date = excluded.due_date, "
+                  "status = excluded.status, payer_url = excluded.payer_url, "
+                  "items = excluded.items, updated_at = excluded.updated_at",
                   (inv["id"], inv.get("number"), inv.get("client_name"), inv["client_email"],
                    inv["amount"], inv["currency"], inv["due_date"], inv["status"],
                    inv.get("payer_url"), json.dumps(inv.get("items") or []), ts, ts))
@@ -576,9 +663,9 @@ def add_work(retainer_id: str, note: str) -> dict:
                          (retainer_id, note)).fetchone()
         if same:
             return {**dict(same), "duplicate": True}
-        cur = c.execute("INSERT INTO work_log (retainer_id, note, created_at) VALUES (?,?,?)",
-                        (retainer_id, note, now()))
-        return dict(c.execute("SELECT * FROM work_log WHERE id = ?", (cur.lastrowid,)).fetchone())
+        row = c.execute("INSERT INTO work_log (retainer_id, note, created_at) VALUES (?,?,?) "
+                        "RETURNING *", (retainer_id, note, now())).fetchone()
+        return dict(row)
 
 
 def work_after(retainer_id: str, after_id: int) -> list[dict]:

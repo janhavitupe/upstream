@@ -44,6 +44,8 @@ PAYROLL_MIN_EDIT_MINUTES = float(os.getenv("PAYROLL_MIN_EDIT_MINUTES", "5"))
 # Unclaimed payouts older than this are cancelled automatically and re-queued
 UNCLAIMED_GRACE_DAYS = float(os.getenv("UNCLAIMED_GRACE_DAYS", "14"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "").strip() or ROOT / "data" / "upstream.db")
+# PostgreSQL (e.g. a free Neon database) instead of the SQLite file: keeps data across deploys
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 BILLS_DIR = Path(os.getenv("BILLS_DIR", "").strip() or DATABASE_PATH.parent / "bills")  # never served publicly
 
 # Sandbox demo recipients

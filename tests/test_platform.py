@@ -1,5 +1,6 @@
 """Everything around the modules: health, scheduler, database upgrades, AI retries, webhooks,
 donations, the basic invoice routes and the frontend's JavaScript."""
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -35,6 +36,7 @@ def test_tick_route(client):
     assert set(client.post("/api/tick").json()) == {"payroll", "chasing", "retainers"}
 
 
+@pytest.mark.skipif(bool(os.environ.get("TEST_DATABASE_URL")), reason="SQLite file upgrade")
 def test_old_databases_are_upgraded_in_place(tmp_path, monkeypatch):
     path = tmp_path / "old.db"
     con = sqlite3.connect(path)

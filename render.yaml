@@ -11,6 +11,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8
+      - key: DATABASE_URL        # free Neon Postgres: keeps data across deploys (docs/database.md)
+        sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET

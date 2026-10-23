@@ -78,6 +78,7 @@ def health():
         "status": "ok",
         "paypal_configured": config.paypal_configured(),
         "paypal_base": config.PAYPAL_BASE,
+        "database": "postgres" if db.using_postgres() else "sqlite (data/upstream.db: wiped on hosts without a disk)",
         "webhook_verification": bool(config.PAYPAL_WEBHOOK_ID),
         "github_token": bool(config.GITHUB_TOKEN),
         "llm": config.LLM_MODEL if config.llm_configured() else False,
