@@ -79,6 +79,7 @@ def health():
         "llm": config.LLM_MODEL if config.llm_configured() else False,
         "oss_monthly_cap": config.OSS_MONTHLY_CAP,
         "payroll_min_edit_minutes": config.PAYROLL_MIN_EDIT_MINUTES,
+        "pot": round(sum(p["amount"] for p in db.open_pot()), 2),
         "demo": {
             "maintainers": config.DEMO_MAINTAINER_EMAILS,
             "client": config.DEMO_CLIENT_EMAIL,
@@ -93,14 +94,25 @@ class AnalyzeIn(BaseModel):
     repo: str = Field(..., examples=["pallets/flask"])
     budget: float = Field(100, gt=0, le=100000)
     max_deps: int = Field(10, ge=1, le=25)
+    use_pot: bool = Field(False, description="Spend the upstream pot (client give-backs); the "
+                                             "budget becomes the pot balance.")
 
 
 @app.post("/api/oss/analyze", tags=["1 · OSS payouts"])
 def oss_analyze(body: AnalyzeIn):
+    pot = db.open_pot() if body.use_pot else []
+    if body.use_pot and not pot:
+        raise HTTPException(400, "Your upstream pot is empty.")
+    budget = round(sum(p["amount"] for p in pot), 2) if pot else body.budget
     try:
-        result = analyze_repo(body.repo, body.budget, body.max_deps)
+        result = analyze_repo(body.repo, budget, body.max_deps)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    if pot:
+        result["pot"] = {"ids": [p["id"] for p in pot], "amount": budget,
+                         "sources": [p["source"] for p in pot]}
+        result["warnings"].append(f"Budget is your upstream pot: ${budget:,.2f} given back from "
+                                  f"{len(pot)} client payment{'s' if len(pot) != 1 else ''}.")
     _apply_carryover(result)
     result["revision"] = 1
     result["history"] = [{"revision": 1, "at": db.now(), "by": result["explained_by"],
@@ -248,6 +260,10 @@ def oss_payout(body: PayoutIn):
     if not db.claim_carryover(carry_ids, body.analysis_id):
         raise HTTPException(409, "Some re-queued money in this analysis was already paid by "
                                  "another payout. Run a new analysis.")
+    if not db.claim_pot((analysis.get("pot") or {}).get("ids", []), body.analysis_id):
+        db.release_carryover(body.analysis_id)
+        raise HTTPException(409, "Some of the upstream pot in this analysis was already spent "
+                                 "by another payout. Run a new analysis.")
     # Deterministic id: PayPal rejects a reused sender_batch_id, so a double approval
     # can't pay twice even if two requests race past the check above
     sender_batch_id = f"upstream-{body.analysis_id}"
@@ -255,6 +271,7 @@ def oss_payout(body: PayoutIn):
         resp = payouts.create_batch(items, sender_batch_id=sender_batch_id)
     except PayPalError:
         db.release_carryover(body.analysis_id)
+        db.release_pot(body.analysis_id)
         raise
     header = resp.get("batch_header", {})
     db.save_batch(header["payout_batch_id"], body.analysis_id, sender_batch_id,

@@ -212,6 +212,13 @@ async function loadInvoices() {
     }).join("") : '<li class="muted">No invoices yet. Ask the chat to bill someone.</li>';
 
     gpState = st;
+    $("auto-give").checked = st.auto_give_back_percent > 0;
+    if (document.activeElement !== $("auto-give-pct") && st.auto_give_back_percent > 0) {
+      $("auto-give-pct").value = st.auto_give_back_percent;
+    }
+    show($("pot-pill"), st.pot.balance > 0);
+    $("pot-pill").innerHTML = st.pot.balance > 0
+      ? `Upstream pot: <b>${money(st.pot.balance)}</b> from ${st.pot.count} payment${st.pot.count === 1 ? "" : "s"} · <a href="#" data-goto-fund>spend it on open source →</a>` : "";
     $("chase-toggle").checked = !st.chasing_paused;
     if (document.activeElement !== $("followup-days")) $("followup-days").value = st.followup_days;
     show($("demo-clock"), st.sandbox);
@@ -220,10 +227,18 @@ async function loadInvoices() {
       : `today (${fmtDay(st.today)})`;
     const cls = (t) => t === "UPSTREAM.INVOICE.PAID" || t === "UPSTREAM.INVOICE.PARTIAL_PAYMENT" ? "log-paid"
       : t === "UPSTREAM.INVOICE.NEEDS_YOU" ? "log-needs" : "";
+    const given = new Set(st.given_back || []);
+    const giveBtn = (e) => {
+      const paidEvent = e.event_type === "UPSTREAM.INVOICE.PAID" || e.event_type === "UPSTREAM.INVOICE.PARTIAL_PAYMENT";
+      if (!paidEvent || !e.resource_id) return "";
+      if (given.has(e.resource_id)) return '<div class="muted small">Given back to your upstream pot ✓</div>';
+      return `<button class="btn ghost give-btn" data-give="${esc(e.resource_id)}">Give ${e.give_back ? money(e.give_back) : "2%"} to open source</button>`;
+    };
     $("chase-log").innerHTML = st.log.length ? st.log.map((e) => `
       <li class="log-item ${cls(e.event_type)}">
         <span>${esc(e.message)}</span>
-        ${e.note ? `<blockquote class="log-note">${esc(e.note)}</blockquote>` : ""}</li>`).join("")
+        ${e.note ? `<blockquote class="log-note">${esc(e.note)}</blockquote>` : ""}
+        ${giveBtn(e)}</li>`).join("")
       : '<li class="muted">Nothing yet. Overdue invoices are chased here automatically.</li>';
   } catch { /* keep the last view */ }
 }
@@ -392,3 +407,36 @@ $("voice-save").addEventListener("click", async () => {
 });
 
 loadVoice();
+
+// ---------- giving back ----------
+
+$("chase-log").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-give]");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = "Adding…";
+  try {
+    await api(`/api/getpaid/invoices/${encodeURIComponent(btn.dataset.give)}/give-back`,
+              { method: "POST", body: JSON.stringify({}) });
+  } catch (err) {
+    btn.textContent = err.message;
+    return;
+  }
+  loadInvoices();
+  if (typeof loadPot === "function") loadPot();
+});
+
+async function saveAutoGive() {
+  const pct = $("auto-give").checked ? Math.min(10, Math.max(0.5, Number($("auto-give-pct").value) || 2)) : 0;
+  await api("/api/getpaid/auto-give-back", { method: "PUT", body: JSON.stringify({ percent: pct }) }).catch(() => {});
+  loadInvoices();
+}
+$("auto-give").addEventListener("change", saveAutoGive);
+$("auto-give-pct").addEventListener("change", () => { if ($("auto-give").checked) saveAutoGive(); });
+
+$("pot-pill").addEventListener("click", (e) => {
+  if (!e.target.closest("[data-goto-fund]")) return;
+  e.preventDefault();
+  showTab("fund");
+  if (typeof loadPot === "function") loadPot();
+});

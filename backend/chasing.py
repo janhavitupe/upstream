@@ -55,14 +55,24 @@ def mark_paid(invoice_id: str, status: str = "PAID") -> bool:
     if not inv or inv["status"] in PAID:
         return False
     db.update_invoice(invoice_id, status=status, paid_at=db.now())
-    tax, give = round(inv["amount"] * TAX_RATE, 2), round(inv["amount"] * GIVE_BACK_RATE, 2)
     who = inv["client_name"] or inv["client_email"]
+    tax = round(inv["amount"] * TAX_RATE, 2)
+    auto = auto_give_back_percent()
+    give = round(inv["amount"] * (auto or GIVE_BACK_RATE * 100) / 100, 2)
+    if auto and give > 0:  # set aside on its own; it's only spent when an OSS payout is approved
+        db.add_pot(give, f"{auto:g}% of {who}'s payment of #{inv['number']}", invoice_id)
+        tail = f"${give:,.2f} ({auto:g}%) went into your upstream pot automatically."
+    else:
+        tail = f"Consider giving ${give:,.2f} to the open source you depend on."
     db.save_event({"event_type": "UPSTREAM.INVOICE.PAID", "resource": {"id": invoice_id},
                    "amount": inv["amount"], "tax": tax, "give_back": give},
                   message=f"Payment landed: {who} paid ${inv['amount']:,.2f} (#{inv['number']}). "
-                          f"Set aside about ${tax:,.2f} for tax, and consider giving "
-                          f"${give:,.2f} to the open source you depend on.", verified=None)
+                          f"Set aside about ${tax:,.2f} for tax. {tail}", verified=None)
     return True
+
+
+def auto_give_back_percent() -> float:
+    return float(db.get_setting("auto_give_back_percent", 0))
 
 
 def refresh_open(force: bool = False) -> list[str]:

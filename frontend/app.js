@@ -60,6 +60,7 @@ $("analyze-form").addEventListener("submit", async (e) => {
     repo: $("repo").value.trim(),
     budget: Number($("budget").value),
     max_deps: Number($("max-deps").value),
+    use_pot: typeof usePot !== "undefined" && usePot,
   };
   $("analyze-btn").disabled = true;
   show($("analyze-progress"));
@@ -510,3 +511,33 @@ loadEvents();
 setInterval(loadEvents, 15000);
 const fromHash = new URLSearchParams(location.hash.slice(1)).get("a");
 if (fromHash) openAnalysis(fromHash);
+
+// ---------- upstream pot (client give-backs) as the budget ----------
+
+let usePot = false;
+
+async function loadPot() {
+  try {
+    const h = await api("/health");
+    const st = h.pot > 0 ? await api("/api/getpaid/state") : null;
+    show($("pot-banner"), h.pot > 0);
+    if (!st) { setUsePot(false); return; }
+    $("pot-amount").textContent = money(st.pot.balance);
+    $("pot-detail").textContent = `given back from ${st.pot.count} client payment${st.pot.count === 1 ? "" : "s"}`;
+    if (usePot) $("budget").value = st.pot.balance;
+  } catch { /* the banner is optional */ }
+}
+
+function setUsePot(on) {
+  usePot = on;
+  $("pot-banner").classList.toggle("active", on);
+  $("budget").readOnly = on;
+  $("pot-use").textContent = on ? "Don't use the pot" : "Use as budget";
+}
+
+$("pot-use").addEventListener("click", () => {
+  setUsePot(!usePot);
+  if (usePot) $("budget").value = $("pot-amount").textContent.replace(/[$,]/g, "");
+});
+
+loadPot();

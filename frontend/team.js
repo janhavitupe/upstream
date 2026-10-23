@@ -27,6 +27,7 @@ function showTab(name) {
     history.replaceState(null, "", `#${name}`);
   }
   if (name === "team") loadSchedules();
+  if (name === "fund" && typeof loadPot === "function") loadPot();
   if (name === "getpaid" && typeof loadInvoices === "function") loadInvoices();
 }
 

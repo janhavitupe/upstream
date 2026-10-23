@@ -357,6 +357,15 @@ a { color: var(--accent); }
 .log-paid { background: var(--good-soft); border-radius: 8px; padding: 8px 10px !important; color: var(--good); }
 
 #voice-card { margin-top: 16px; }
+.inline-num { width: 52px; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 1px 4px; }
+.pot-pill { margin: 4px 0 8px 26px; font-size: 13px; color: var(--good); }
+.pot-pill a { color: var(--accent); }
+.pot-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); color: var(--good); }
+.pot-banner .muted { color: var(--good); opacity: .85; }
+.pot-banner.active { outline: 2px solid var(--good); }
+.log-item .give-btn { margin-top: 6px; }
 .followup-row { display: block; color: var(--muted); margin: 0 0 6px 26px; }
 .followup-row input { width: 52px; font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }

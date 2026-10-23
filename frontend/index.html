@@ -33,6 +33,11 @@
         <h2>Fund your upstream</h2>
         <p class="muted">Pick a GitHub repo. Upstream reads its dependencies, checks each project's
           health, and proposes a fair split of your monthly budget.</p>
+        <div class="pot-banner" id="pot-banner" hidden>
+          <div><b>Your upstream pot: <span id="pot-amount"></span></b>
+            <span class="muted small" id="pot-detail"></span></div>
+          <button class="btn" id="pot-use" type="button">Use as budget</button>
+        </div>
         <form id="analyze-form" class="analyze-form">
           <label class="field grow">
             <span>Repository</span>
@@ -154,6 +159,12 @@
             <input type="checkbox" id="chase-toggle" checked>
             <span>Chase overdue invoices automatically (friendly → firm → final)</span>
           </label>
+          <label class="check small switch-row">
+            <input type="checkbox" id="auto-give">
+            <span>Automatically put <input type="number" id="auto-give-pct" min="0.5" max="10" step="0.5" value="2" class="inline-num">%
+              of every payment into your <b>upstream pot</b> for the open source you depend on</span>
+          </label>
+          <div class="pot-pill" id="pot-pill" hidden></div>
           <label class="small followup-row">After the final notice, keep following up every
             <input type="number" id="followup-days" min="3" max="30" value="7"> days until paid.</label>
           <ul class="list" id="inv-list"><li class="muted">No invoices yet.</li></ul>

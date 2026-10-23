@@ -114,6 +114,14 @@ CREATE TABLE IF NOT EXISTS settings (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL                  -- JSON
 );
+CREATE TABLE IF NOT EXISTS pot (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    amount            REAL NOT NULL,
+    source            TEXT NOT NULL,       -- e.g. "Acme paid #0019"
+    invoice_id        TEXT UNIQUE,         -- one give-back per client payment
+    created_at        TEXT NOT NULL,
+    used_by_analysis  TEXT                 -- set when an approved OSS payout spends it
+);
 CREATE TABLE IF NOT EXISTS events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at  TEXT NOT NULL,
@@ -470,6 +478,48 @@ def set_setting(key: str, value):
                   "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, json.dumps(value)))
 
 
+# ---------- upstream pot (give-back from client payments) ----------
+
+def add_pot(amount: float, source: str, invoice_id: str | None) -> bool:
+    """False if this payment was already given back."""
+    with connect() as c:
+        cur = c.execute("INSERT OR IGNORE INTO pot (amount, source, invoice_id, created_at) "
+                        "VALUES (?,?,?,?)", (round(amount, 2), source, invoice_id, now()))
+    return cur.rowcount == 1
+
+
+def open_pot() -> list[dict]:
+    with connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM pot WHERE used_by_analysis IS NULL ORDER BY id").fetchall()]
+
+
+def given_back_invoices() -> set[str]:
+    with connect() as c:
+        return {r["invoice_id"] for r in c.execute(
+            "SELECT invoice_id FROM pot WHERE invoice_id IS NOT NULL").fetchall()}
+
+
+def claim_pot(ids: list[int], analysis_id: str) -> bool:
+    """Spend pot entries on one payout; False if any was already spent."""
+    if not ids:
+        return True
+    with connect() as c:
+        marks = ",".join("?" * len(ids))
+        cur = c.execute(f"UPDATE pot SET used_by_analysis = ? WHERE id IN ({marks}) "
+                        "AND used_by_analysis IS NULL", (analysis_id, *ids))
+        if cur.rowcount != len(ids):
+            c.rollback()
+            return False
+    return True
+
+
+def release_pot(analysis_id: str):
+    with connect() as c:
+        c.execute("UPDATE pot SET used_by_analysis = NULL WHERE used_by_analysis = ?",
+                  (analysis_id,))
+
+
 # ---------- webhook events ----------
 
 def save_event(event: dict, *, message: str, verified: bool | None) -> dict:
@@ -497,6 +547,8 @@ def list_events(limit: int = 200, prefixes: tuple[str, ...] = ()) -> list[dict]:
         e = {k: r[k] for k in ("received_at", "event_type", "resource_id", "message")}
         e["verified"] = None if r["verified"] is None else bool(r["verified"])
         if prefixes:
-            e["note"] = json.loads(r["payload"]).get("note")
+            payload = json.loads(r["payload"])
+            e["note"] = payload.get("note")
+            e["give_back"] = payload.get("give_back")
         out.append(e)
     return out
