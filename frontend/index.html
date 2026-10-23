@@ -150,9 +150,54 @@
             <h2>Invoices</h2>
             <span class="muted small" id="inv-summary"></span>
           </div>
+          <label class="check small switch-row">
+            <input type="checkbox" id="chase-toggle" checked>
+            <span>Chase overdue invoices automatically (friendly → firm → final)</span>
+          </label>
+          <label class="small followup-row">After the final notice, keep following up every
+            <input type="number" id="followup-days" min="3" max="30" value="7"> days until paid.</label>
           <ul class="list" id="inv-list"><li class="muted">No invoices yet.</li></ul>
+          <div class="demo-clock" id="demo-clock" hidden>
+            <div><b>Demo clock</b> <span class="muted small" id="clock-text"></span></div>
+            <div class="btn-row">
+              <button class="btn ghost" data-days="1" type="button">+1 day</button>
+              <button class="btn ghost" data-days="7" type="button">+1 week</button>
+              <button class="btn ghost" data-days="0" type="button">Reset</button>
+            </div>
+            <div class="muted small">Sandbox only: pretends time has passed so you can watch
+              chasing happen. Reminders it sends are real PayPal reminders.</div>
+          </div>
+          <h2 class="section-title">Chasing &amp; payments</h2>
+          <ul class="list" id="chase-log"><li class="muted">Nothing yet.</li></ul>
         </section>
       </div>
+      <section class="card" id="voice-card">
+        <div class="result-head">
+          <div>
+            <h2>Your writing style</h2>
+            <p class="muted small">Paste 2–5 messages you've written to clients. Every reminder
+              Upstream sends will sound like you: your greeting, tone and sign-off.</p>
+          </div>
+          <span class="status" id="voice-status"></span>
+        </div>
+        <div id="voice-samples" class="voice-samples"></div>
+        <div class="btn-row">
+          <button class="btn ghost" id="voice-add" type="button">+ Add another</button>
+          <label class="field inline"><span>Preview a</span>
+            <select id="voice-tone">
+              <option value="friendly">friendly</option>
+              <option value="firm">firm</option>
+              <option value="final">final</option>
+            </select><span>reminder</span></label>
+          <button class="btn" id="voice-preview" type="button">Preview</button>
+          <button class="btn primary" id="voice-save" type="button">Save style</button>
+          <span class="muted small" id="voice-note"></span>
+        </div>
+        <div class="voice-compare" id="voice-compare" hidden>
+          <div><h3>Without your style</h3><p id="voice-generic"></p></div>
+          <div><h3>In your voice</h3><p id="voice-yours"></p></div>
+        </div>
+      </section>
     </div>
 
     <div id="tab-team" hidden>

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend import config, db, payroll, report, requeue
+from backend import config, db, report, requeue, scheduler
 from backend.oss.analyzer import analyze_repo
 from backend.oss.github import GitHubError
 from backend.paypal import invoices, orders, payouts, subscriptions
@@ -25,7 +25,7 @@ from backend.webhooks import router as webhook_router
 @asynccontextmanager
 async def lifespan(_):
     db.init()
-    stop = payroll.start_scheduler() if config.PAYROLL_SCHEDULER else None
+    stop = scheduler.start() if config.PAYROLL_SCHEDULER else None
     yield
     if stop:
         stop.set()
@@ -59,6 +59,13 @@ async def github_error_handler(_, e: GitHubError):
 @app.get("/", include_in_schema=False)
 def root():
     return FileResponse(FRONTEND / "index.html")
+
+
+@app.post("/api/tick", tags=["meta"])
+def tick():
+    """Run everything that is due (payroll, invoice chasing). Safe to call publicly: each job
+    only does what its rules allow and never acts twice. The daily GitHub Action calls this."""
+    return scheduler.tick_all()
 
 
 @app.get("/health", tags=["meta"])

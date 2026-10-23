@@ -264,19 +264,3 @@ def tick(now: datetime | None = None, pay: bool = True) -> list[str]:
                 actions.append(f"error {s['repo']} {period}: {e}")
                 print(f"[payroll] {s['repo']} {period}: {e}")
     return actions
-
-
-def start_scheduler(interval_seconds: int = 60) -> threading.Event:
-    """Background timer for while the app is awake; the daily GitHub Action covers sleep."""
-    stop = threading.Event()
-
-    def loop():
-        while not stop.wait(5 if not loop.started else interval_seconds):
-            loop.started = True
-            try:
-                tick()
-            except Exception as e:  # never let the timer die
-                print(f"[payroll] tick failed: {e}")
-    loop.started = False
-    threading.Thread(target=loop, name="payroll-scheduler", daemon=True).start()
-    return stop

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import config, db, requeue
+from backend import chasing, config, db, requeue
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
@@ -21,6 +21,15 @@ MESSAGES = {
     "PAYMENT.SALE.COMPLETED": "Retainer payment received",
     "PAYMENT.CAPTURE.COMPLETED": "Donation captured and paid to the provider",
 }
+
+
+def _apply_invoice_event(etype: str, resource: dict):
+    if not resource.get("id") or not db.get_invoice(resource["id"]):
+        return  # not an invoice Upstream sent
+    if etype == "INVOICING.INVOICE.PAID":
+        chasing.mark_paid(resource["id"], resource.get("status") or "PAID")
+    elif etype == "INVOICING.INVOICE.CANCELLED":
+        db.update_invoice(resource["id"], status="CANCELLED")
 
 
 def _apply_payout_event(etype: str, resource: dict):
@@ -52,6 +61,8 @@ async def paypal_webhook(request: Request):
     # unverified events are allowed for testing; on a public deploy anyone could send them.
     if verified or (verified is None and not config.IS_PUBLIC_DEPLOY):
         _apply_payout_event(etype, event.get("resource") or {})
+        if etype.startswith("INVOICING.INVOICE."):
+            _apply_invoice_event(etype, event.get("resource") or {})
     print(f"[webhook] {etype} verified={verified}")
     return {"ok": True}
 

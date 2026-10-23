@@ -15,7 +15,7 @@ Module 1 works end to end from the dashboard at `/`. The PayPal integrations for
 |---|---|---|---|
 | 1. Fund your upstream (OSS payouts) | 1 | **Done.** Dashboard: repo → dependencies → pay for work done × code size (idle projects get $0 and a warning) → AI reads recent commits and adjusts each share by ±5 pts max, with reasons → edit → approve → PayPal Payouts batch → live status; unclaimed/returned payouts re-queued to the next payout; shareable giving report at `/report/{id}` | Maintainer sign-up to receive payouts directly |
 | 1b. Pay your team (monthly payroll) | 1 | **Done.** Pick a repo you own, a monthly total and a pay day. Each month the top contributors (you excluded) are paid by work done (commits × lines changed) with an AI review of their commits (±5 pts). You approve the schedule once; a heads-up preview comes before each payday and can be skipped or edited, otherwise it pays automatically. Daily check via GitHub Actions (`.github/workflows/payroll-tick.yml`) | GitHub sign-in to prove repo ownership; contributors adding their own PayPal email; persistent database on Render |
-| 2. Get paid (invoices) | 2 | **Chat done.** "Bill Acme $500 for the API work, due next Friday" → the AI (tool calling) creates and sends a PayPal invoice at once, with Undo and the client's pay page; asks for unknown clients' emails; lists, cancels, pauses chasing | Automatic overdue chasing in your voice, payment-landed message |
+| 2. Get paid (invoices) | 2 | **Chat + chasing done.** "Bill Acme $500 for the API work, due next Friday" → the AI (tool calling) creates and sends a PayPal invoice at once, with Undo and the client's pay page. Overdue invoices are chased automatically until paid (friendly → firm → final, then a follow-up every N days; AI-written notes; missed stages skipped), with a global pause and per-client opt-out. A week after the final notice the invoice also **needs you**: did the client open it, a ready-to-send personal message, let them pay in parts (PayPal re-sends), a paper trail, write off. payments are detected (webhook or PayPal check) and stop chasing, with a tax / give-back note. Sandbox demo clock to show a month in a minute | Reminders in your own writing style: **done** (paste 2–5 messages, preview generic vs your voice, tone level always wins) |
 | 3. Fair retainers (subscriptions) | 3 | Product → plan → subscription, pause/resume | Pre-renewal heads-up job |
 | 4. Pay the bill, not the person | 4 | Donation order paid directly to the hospital account + capture | Bill upload and AI verification |
 | Webhooks + storage | all | Receiver + signature verification; SQLite (`data/upstream.db`) stores analyses, payout batches/items and events | Invoice and chase state (Phase 2) |
@@ -48,6 +48,8 @@ backend/
   report.py            public giving report page
   payroll.py           monthly team payroll: contributor work, split, schedule, scheduler
   payroll_api.py       payroll API routes
+  chasing.py           automatic overdue reminders + payment detection
+  scheduler.py         one timer for payroll and chasing (POST /api/tick)
 frontend/              dashboard (plain HTML/JS + AG Grid; card view on phones)
   paypal/              client (OAuth), payouts, invoices, subscriptions, orders, webhooks
   oss/                 github client, manifest parsing, health signals, scoring, analyzer

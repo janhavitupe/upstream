@@ -101,7 +101,14 @@ CREATE TABLE IF NOT EXISTS invoices (
     updated_at        TEXT NOT NULL,
     paid_at           TEXT,
     chase_stage       INTEGER NOT NULL DEFAULT 0,  -- reminders sent so far
-    last_reminder_at  TEXT
+    last_reminder_at  TEXT,
+    last_reminder_day TEXT,               -- by the (demo) clock, for follow-up spacing
+    final_day         TEXT,               -- when the final notice went out
+    needs_you_at      TEXT,               -- when it was handed to the owner
+    viewed            INTEGER,            -- PayPal: has the client opened it
+    amount_due        REAL,               -- what's still owed (after partial payments)
+    partial_allowed   INTEGER NOT NULL DEFAULT 0,
+    written_off       INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (
     key    TEXT PRIMARY KEY,
@@ -135,11 +142,28 @@ def connect():
         conn.close()
 
 
+# Columns added after the first release; CREATE TABLE IF NOT EXISTS won't add them
+NEW_COLUMNS = {"invoices": [("last_reminder_day", "TEXT"), ("final_day", "TEXT"),
+                            ("needs_you_at", "TEXT"), ("viewed", "INTEGER"),
+                            ("amount_due", "REAL"),
+                            ("partial_allowed", "INTEGER NOT NULL DEFAULT 0"),
+                            ("written_off", "INTEGER NOT NULL DEFAULT 0")]}
+
+
+def _migrate(c):
+    for table, cols in NEW_COLUMNS.items():
+        have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, decl in cols:
+            if name not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
 def init():
     config.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as c:
         c.execute("PRAGMA journal_mode = WAL")
         c.executescript(SCHEMA)
+        _migrate(c)
         for name, email in config.DEMO_CLIENTS.items():  # sandbox clients, so chat works at once
             c.execute("INSERT OR IGNORE INTO clients (name, email, created_at) VALUES (?,?,?)",
                       (name, email, now()))
@@ -424,6 +448,16 @@ def update_invoice(invoice_id: str, **fields):
         c.execute(f"UPDATE invoices SET {cols} WHERE id = ?", (*fields.values(), invoice_id))
 
 
+def invoice_reminders(invoice_id: str) -> list[dict]:
+    """Every reminder sent for one invoice, oldest first, with its text."""
+    with connect() as c:
+        rows = c.execute("SELECT received_at, event_type, message, payload FROM events "
+                         "WHERE resource_id = ? AND event_type LIKE 'UPSTREAM.%' ORDER BY id",
+                         (invoice_id,)).fetchall()
+    return [{"at": r["received_at"], "type": r["event_type"], "message": r["message"],
+             "note": json.loads(r["payload"]).get("note")} for r in rows]
+
+
 def get_setting(key: str, default=None):
     with connect() as c:
         row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
@@ -450,9 +484,19 @@ def save_event(event: dict, *, message: str, verified: bool | None) -> dict:
     return row
 
 
-def list_events(limit: int = 200) -> list[dict]:
+def list_events(limit: int = 200, prefixes: tuple[str, ...] = ()) -> list[dict]:
+    """Newest first. With prefixes, only those event types, plus the reminder note if any."""
+    q, args = "SELECT received_at, event_type, resource_id, message, verified, payload FROM events", []
+    if prefixes:
+        q += " WHERE " + " OR ".join("event_type LIKE ?" for _ in prefixes)
+        args = [f"{p}%" for p in prefixes]
     with connect() as c:
-        rows = c.execute("SELECT received_at, event_type, resource_id, message, verified "
-                         "FROM events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    return [{**dict(r), "verified": None if r["verified"] is None else bool(r["verified"])}
-            for r in rows]
+        rows = c.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+    out = []
+    for r in rows:
+        e = {k: r[k] for k in ("received_at", "event_type", "resource_id", "message")}
+        e["verified"] = None if r["verified"] is None else bool(r["verified"])
+        if prefixes:
+            e["note"] = json.loads(r["payload"]).get("note")
+        out.append(e)
+    return out
