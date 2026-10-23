@@ -41,13 +41,17 @@ Module 1 works end to end from the dashboard at `/`. The PayPal integrations for
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest        # 37 tests, offline: no PayPal, GitHub or AI calls
+python -m pytest                              # 132 tests, every feature, offline (~10 s)
+UPSTREAM_E2E=1 python -m pytest -m e2e        # 9 end-to-end tests against the real PayPal sandbox
 ```
 
-The tests cover the money rules: approval before payouts, exact amounts, caps, no double payment,
-the AI's ±5-point limit, payroll timing (heads-up first, payday, never twice), and chasing (right
-stage, no spam, pause and opt-out, "needs you"). A [`Jenkinsfile`](Jenkinsfile) runs them on every
-push; setup in [`docs/jenkins.md`](docs/jenkins.md).
+Every feature has tests: dependency analysis, scoring and the AI's ±5-point limit, payouts
+(approval, exact amounts, caps, no double payment, re-queue, carry-over, pot, giving report), team
+payroll (contributor work, split, heads-up, payday, never twice), invoicing chat and every tool,
+chasing until paid, Needs you, your writing style, give-back, retainers (heads-ups, client page,
+pause), webhooks, database upgrades and the AI client's retries. Offline tests use an in-memory
+fake PayPal, AI and GitHub (`tests/fakes.py`). A [`Jenkinsfile`](Jenkinsfile) runs the unit tests
+on every push and the end-to-end tests nightly; setup in [`docs/jenkins.md`](docs/jenkins.md).
 
 ## Project structure
 ```

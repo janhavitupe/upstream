@@ -170,7 +170,8 @@ def heads_up_due() -> list[str]:
         renews = date.fromisoformat(r["next_billing"])
         if chasing.today() < renews - timedelta(days=HEADS_UP_DAYS):
             continue
-        work = db.work_since(r["id"], _last_heads_up_time(r))  # everything since the last one
+        covered = _heads_up_marks(r)
+        work = db.work_after(r["id"], covered[0] if covered else 0)  # not in an earlier heads-up
         note = write_heads_up(r, work)
         db.update_retainer(r["id"], heads_up_for=r["next_billing"], heads_up_note=note)
         delivered = _deliver(r, note)
@@ -179,28 +180,26 @@ def heads_up_due() -> list[str]:
                               f"{r['currency']} {r['amount']:,.2f}. "
                               + ("Emailed to the client." if delivered else
                                  "Ready to send: copy it from the retainer card."),
-               note=note, client_url=client_url(r))
+               note=note, client_url=client_url(r),
+               work_upto=max([w["id"] for w in work], default=covered[0] if covered else 0))
         sent.append(f"heads-up {r['client_name']}")
     return sent
 
 
-def _last_heads_up_time(r: dict) -> str | None:
-    """Work logged since the previous heads-up belongs to this one."""
+def _heads_up_marks(r: dict) -> list[int]:
+    """The last work-log id each heads-up covered, newest first. Ids (not times) decide what's
+    new, so work logged in the same second as a heads-up is never counted twice."""
     with db.connect() as c:
-        row = c.execute("SELECT received_at FROM events WHERE resource_id = ? AND event_type = "
-                        "'UPSTREAM.RETAINER.HEADS_UP' ORDER BY id DESC LIMIT 1",
-                        (r["id"],)).fetchone()
-    return row["received_at"] if row else None
+        rows = c.execute("SELECT payload FROM events WHERE resource_id = ? AND event_type = "
+                         "'UPSTREAM.RETAINER.HEADS_UP' ORDER BY id DESC", (r["id"],)).fetchall()
+    import json
+    return [int(json.loads(row["payload"]).get("work_upto") or 0) for row in rows]
 
 
-def _last_heads_up_time_before_latest(r: dict) -> str | None:
-    """Start of "this period" on the client page: the heads-up before the latest one, so the
-    page shows what the latest heads-up talked about plus anything logged since."""
-    with db.connect() as c:
-        rows = c.execute("SELECT received_at FROM events WHERE resource_id = ? AND event_type = "
-                         "'UPSTREAM.RETAINER.HEADS_UP' ORDER BY id DESC LIMIT 2",
-                         (r["id"],)).fetchall()
-    return rows[1]["received_at"] if len(rows) == 2 else None
+def period_work(r: dict) -> list[dict]:
+    """For the client page: what the latest heads-up talked about, plus anything logged since."""
+    covered = _heads_up_marks(r)
+    return db.work_after(r["id"], covered[1] if len(covered) > 1 else 0)
 
 
 def _deliver(r: dict, note: str) -> bool:

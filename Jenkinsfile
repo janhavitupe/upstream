@@ -1,9 +1,10 @@
 // Upstream CI/CD pipeline. Works on Windows and Linux Jenkins agents.
 //
-//   Install -> Syntax check -> Unit tests (JUnit report) -> [Live smoke test] -> [Deploy to Render]
+//   Install -> Syntax check -> Unit tests -> [End-to-end] -> [Live smoke test] -> [Deploy]
 //
-// The unit tests never touch PayPal, GitHub or the AI. The two optional stages use secrets
-// stored in Jenkins (Manage Jenkins -> Credentials), never in this repo. See docs/jenkins.md.
+// Unit tests (every feature, offline, ~10 s) run on every build. End-to-end tests run every money
+// flow against the real PayPal sandbox: nightly by themselves, or when RUN_E2E is ticked.
+// Secrets live in Jenkins (Manage Jenkins -> Credentials), never in this repo. See docs/jenkins.md.
 
 pipeline {
     agent any
@@ -12,6 +13,8 @@ pipeline {
         string(name: 'PYTHON', defaultValue: 'python',
                description: 'Python 3.11+ to use. On a Windows Jenkins service, give the full path ' +
                             '(e.g. C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python311\\python.exe).')
+        booleanParam(name: 'RUN_E2E', defaultValue: false,
+                     description: 'Run the end-to-end tests against the PayPal sandbox (they also run nightly).')
         booleanParam(name: 'RUN_SMOKE', defaultValue: false,
                      description: 'Also run the live PayPal sandbox smoke test (needs credentials).')
         string(name: 'SMOKE_SECTIONS', defaultValue: 'config oauth github',
@@ -28,7 +31,8 @@ pipeline {
 
     // Jenkins on a laptop can't receive GitHub webhooks, so check the repo for new commits instead
     triggers {
-        pollSCM('H/5 * * * *')
+        pollSCM('H/5 * * * *')   // new commits: unit tests
+        cron('H 2 * * *')        // every night: unit + end-to-end tests
     }
 
     environment {
@@ -59,6 +63,28 @@ pipeline {
                 always {
                     junit testResults: 'reports/junit.xml', allowEmptyResults: false
                 }
+            }
+        }
+
+        stage('End-to-end (PayPal sandbox)') {
+            when { anyOf { expression { params.RUN_E2E }; expression { isNightly() } } }
+            environment {
+                UPSTREAM_E2E = '1'
+                DEMO_MAINTAINER_EMAILS = 'maintainer-a@personal.example.com,maintainer-b@personal.example.com,maintainer-c@personal.example.com'
+                DEMO_CLIENTS = 'Acme=acme-client@personal.example.com,Globex=globex-client@personal.example.com'
+                DEMO_HOSPITAL_EMAIL = 'city-hospital@business.example.com'
+            }
+            steps {
+                withCredentials([
+                    string(credentialsId: 'paypal-client-id', variable: 'PAYPAL_CLIENT_ID'),
+                    string(credentialsId: 'paypal-client-secret', variable: 'PAYPAL_CLIENT_SECRET'),
+                    string(credentialsId: 'groq-api-key', variable: 'LLM_API_KEY'),
+                ]) {
+                    run "${venvPython()} -m pytest -m e2e --junitxml=reports/e2e.xml"
+                }
+            }
+            post {
+                always { junit testResults: 'reports/e2e.xml', allowEmptyResults: true }
             }
         }
 
@@ -108,6 +134,11 @@ def run(String cmd) {
     } else {
         bat cmd
     }
+}
+
+// True when the nightly timer (not a commit or a person) started this build
+def isNightly() {
+    return !currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause').isEmpty()
 }
 
 def venvPython() {

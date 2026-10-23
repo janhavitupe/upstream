@@ -59,6 +59,8 @@ def test_heads_up_first_then_pays_on_payday_once(fake_split, paid):
 
 def test_creating_a_schedule_never_pays_in_the_same_call(fake_split, paid):
     now = datetime.now(timezone.utc)
+    if now.day > 28:
+        pytest.skip("pay days are 1-28")
     _schedule(min(now.day, 28), notice=0, created=(now - timedelta(days=1)).isoformat())
     assert payroll.tick(now, pay=False) and not paid
 

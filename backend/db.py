@@ -554,6 +554,13 @@ def add_work(retainer_id: str, note: str) -> dict:
         return dict(c.execute("SELECT * FROM work_log WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
+def work_after(retainer_id: str, after_id: int) -> list[dict]:
+    with connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM work_log WHERE retainer_id = ? AND id > ? ORDER BY id",
+            (retainer_id, after_id)).fetchall()]
+
+
 def work_since(retainer_id: str, since_iso: str | None) -> list[dict]:
     q, args = "SELECT * FROM work_log WHERE retainer_id = ?", [retainer_id]
     if since_iso:

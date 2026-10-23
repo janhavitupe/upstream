@@ -24,7 +24,7 @@ def _when(iso: str | None) -> str:
 
 def _page(r: dict, flash: str = "") -> str:
     who = escape(r["client_name"] or "")
-    work = db.work_since(r["id"], retainers._last_heads_up_time_before_latest(r))
+    work = retainers.period_work(r)
     work_html = "".join(f"<li>{escape(w['note'])}</li>" for w in work) or \
         '<li class="muted">Nothing logged yet for this period.</li>'
     token = escape(r["token"])

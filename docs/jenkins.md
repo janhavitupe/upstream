@@ -6,11 +6,13 @@ The pipeline is in [`Jenkinsfile`](../Jenkinsfile):
 |---|---|
 | Install | Creates a clean virtual environment and installs `requirements-dev.txt` |
 | Syntax check | Compiles every Python file |
-| Unit tests | Runs `pytest` (37 tests, no network) and publishes the results in Jenkins |
+| Unit tests | Runs `pytest`: 132 tests covering every feature, offline (fake PayPal, AI and GitHub), ~10 s |
+| End-to-end | Every money flow against the **real PayPal sandbox** (9 tests, ~2 min). Runs **every night** by itself, or tick `RUN_E2E` |
 | Live smoke test | *Optional.* Calls the real PayPal sandbox with credentials stored in Jenkins |
 | Deploy to Render | *Optional, `main` only.* Triggers a Render deploy through a deploy hook |
 
-Jenkins checks GitHub for new commits every 5 minutes and builds automatically.
+Jenkins checks GitHub for new commits every 5 minutes and builds automatically, and runs the full
+suite including end-to-end tests every night around 2 AM (only while Jenkins is running).
 
 ## 1. Install Java and Jenkins (Windows)
 
@@ -61,7 +63,23 @@ C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe
 
 After a build, open it and click **Tests** to see every test, and **Console Output** for the log.
 
-## 5. Optional: live smoke test
+## 5. End-to-end tests (real PayPal sandbox)
+
+They need the same credentials as the smoke test below (`paypal-client-id`, `paypal-client-secret`,
+and optionally `groq-api-key` for the chat test). Then either wait for the nightly run, or
+**Build with Parameters** → tick **RUN_E2E**. Results appear under **Tests** next to the unit tests.
+
+Freestyle job: add a second batch command (with the credentials bound under *Build Environment →
+Use secret text(s) or file(s)*):
+
+```bat
+set UPSTREAM_E2E=1
+.venv-ci\Scripts\python.exe -m pytest -m e2e --junitxml=reports\e2e.xml
+```
+
+Run them on your own PC: `$env:UPSTREAM_E2E="1"; python -m pytest -m e2e` (keys come from `.env`).
+
+## 6. Optional: live smoke test
 
 Add these under *Manage Jenkins → Credentials → System → Global credentials → Add Credentials*,
 kind **Secret text**, with exactly these IDs:
@@ -76,7 +94,7 @@ kind **Secret text**, with exactly these IDs:
 Then **Build with Parameters** → tick **RUN_SMOKE**. The default sections (`config oauth github`)
 don't move any sandbox money; add `invoices` or `payouts` to `SMOKE_SECTIONS` for a fuller check.
 
-## 6. Optional: deploy from Jenkins
+## 7. Optional: deploy from Jenkins
 
 1. Render → your service → **Settings** → **Deploy Hook** → copy the URL.
 2. Add it in Jenkins as a Secret text credential with ID `render-deploy-hook`.
