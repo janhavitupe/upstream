@@ -1,7 +1,7 @@
 """Monthly team payroll: pay the top contributors of a repo you own, on a set day.
 
-Same principle as dependency funding, per person: pay for work done (commits) times its size
-(lines changed), with diminishing returns; the AI reads each person's commit messages and
+Each person is paid for work done (commits) times its size (lines changed), with diminishing
+returns; the AI reads each person's commit messages and
 adjusts by at most a few points. The owner approves the schedule once. Before each payday a
 preview is made (the heads-up); the owner can skip or edit it, and if they do nothing it is
 paid automatically, never before payday and never before the heads-up has run its course.
@@ -15,8 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from backend import config, db
 from backend.agent.explain import MAX_ADJUST_POINTS, review_contributors
-from backend.oss import github, scoring
-from backend.oss.signals import _is_bot
+from backend import github, split
 from backend.paypal import payouts
 from backend.paypal.client import PayPalError
 
@@ -47,7 +46,7 @@ def contributor_work(owner: str, repo: str, since: datetime, until: datetime,
         for c in commits:
             login = (c.get("author") or {}).get("login")
             name = (c.get("commit", {}).get("author") or {}).get("name") or ""
-            if _is_bot(login, name) or len(c.get("parents") or []) > 1:
+            if github.is_bot(login, name) or len(c.get("parents") or []) > 1:
                 continue  # bots and merge commits aren't anyone's work
             if not login:
                 unlinked += 1  # no GitHub account linked: can't be identified or paid
@@ -102,14 +101,14 @@ def compute_split(repo_ref: str, owner_login: str, total: float, top_n: int,
     paid, rest = rows[:top_n], rows[top_n:]
 
     total_w = sum(r["weight"] for r in paid)
-    for r, amount in zip(paid, scoring.split_cents([r["weight"] for r in paid], total)):
+    for r, amount in zip(paid, split.split_cents([r["weight"] for r in paid], total)):
         r["amount"] = amount
         r["percent"] = round(100 * r["weight"] / total_w, 1) if total_w else 0.0
     review = review_contributors(paid, total) if paid else None
     if review:
-        paid = scoring.apply_ai_adjustments(paid, total, review, MAX_ADJUST_POINTS, key="login")
+        paid = split.apply_ai_adjustments(paid, total, review, MAX_ADJUST_POINTS, key="login")
 
-    demo = config.DEMO_MAINTAINER_EMAILS
+    demo = config.DEMO_TEAM_EMAILS
     sandbox = "sandbox" in config.PAYPAL_BASE
     for i, r in enumerate(paid):
         r.pop("weight", None)

@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend import causes, chasing, config, db, requeue, retainers
+from backend import causes, chasing, config, db, retainers
 from backend.paypal.webhooks import verify_signature
 
 router = APIRouter()
 
 MESSAGES = {
-    "PAYMENT.PAYOUTSBATCH.SUCCESS": "OSS payout batch completed",
-    "PAYMENT.PAYOUTS-ITEM.SUCCEEDED": "A maintainer received their payout",
+    "PAYMENT.PAYOUTSBATCH.SUCCESS": "Payroll batch completed",
+    "PAYMENT.PAYOUTS-ITEM.SUCCEEDED": "A team member received their pay",
     "PAYMENT.PAYOUTS-ITEM.UNCLAIMED": "A payout is unclaimed (recipient has no PayPal account yet)",
     "PAYMENT.PAYOUTS-ITEM.RETURNED": "A payout was returned unclaimed",
     "INVOICING.INVOICE.PAID": "Invoice paid. Consider setting aside ~25% for tax.",
@@ -43,8 +43,6 @@ def _apply_payout_event(etype: str, resource: dict):
             db.update_item(resource["payout_batch_id"], sender_item_id,
                            status=resource.get("transaction_status"),
                            payout_item_id=resource.get("payout_item_id"))
-            if etype == "PAYMENT.PAYOUTS-ITEM.RETURNED":  # PayPal gave the money back
-                requeue.requeue(resource["payout_batch_id"], float("inf"))
 
 
 @router.post("/webhooks/paypal", tags=["webhooks"])

@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Upstream</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%230b5cd5%22/%3E%3Cpath d=%22M16 7l7 8h-5v10h-4V15H9z%22 fill=%22white%22/%3E%3C/svg%3E">
-  <meta name="description" content="Fund the open-source projects your work depends on, with PayPal and AI.">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
+  <meta name="description" content="Pay your team, get paid by clients, run retainers and fund medical bills, with PayPal and AI.">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -24,112 +22,10 @@
 
   <main>
     <nav class="tabs" role="tablist">
-      <button class="tab active" role="tab" data-tab="fund" aria-selected="true">Fund your upstream</button>
-      <button class="tab" role="tab" data-tab="team" aria-selected="false">Pay your team</button>
+      <button class="tab active" role="tab" data-tab="team" aria-selected="true">Pay your team</button>
       <button class="tab" role="tab" data-tab="getpaid" aria-selected="false">Get paid</button>
       <button class="tab" role="tab" data-tab="causes" aria-selected="false">Verified causes</button>
     </nav>
-    <div id="tab-fund">
-      <section class="card" id="analyze-card">
-        <h2>Fund your upstream</h2>
-        <p class="muted">Pick a GitHub repo. Upstream reads its dependencies, checks each project's
-          health, and proposes a fair split of your monthly budget.</p>
-        <div class="pot-banner" id="pot-banner" hidden>
-          <div><b>Your upstream pot: <span id="pot-amount"></span></b>
-            <span class="muted small" id="pot-detail"></span></div>
-          <button class="btn" id="pot-use" type="button">Use as budget</button>
-        </div>
-        <form id="analyze-form" class="analyze-form">
-          <label class="field grow">
-            <span>Repository</span>
-            <input id="repo" name="repo" placeholder="owner/repo or GitHub URL" value="pallets/flask"
-                   required autocomplete="off" spellcheck="false">
-          </label>
-          <label class="field">
-            <span>Budget (USD)</span>
-            <input id="budget" name="budget" type="number" min="1" step="1" value="100" required>
-          </label>
-          <label class="field">
-            <span>Max deps</span>
-            <input id="max-deps" name="max_deps" type="number" min="1" max="25" value="8" required>
-          </label>
-          <button class="btn primary" id="analyze-btn" type="submit">Analyze</button>
-        </form>
-        <div id="analyze-progress" class="progress" hidden>
-          <div class="spinner" aria-hidden="true"></div>
-          <span id="progress-text">Reading dependencies…</span>
-        </div>
-        <div id="analyze-error" class="alert error" hidden></div>
-      </section>
-
-      <section class="card" id="result-card" hidden>
-        <div class="result-head">
-          <div>
-            <h2 id="result-title"></h2>
-            <p class="muted" id="result-meta"></p>
-          </div>
-          <div class="total-box">
-            <span class="muted">Total</span>
-            <strong id="total-amount">$0.00</strong>
-            <span class="muted small" id="total-note"></span>
-          </div>
-        </div>
-        <div id="warnings"></div>
-
-        <div class="legend muted small">
-          <span><i class="dot risk-high"></i>At risk</span>
-          <span><i class="dot risk-mid"></i>Watch</span>
-          <span><i class="dot risk-low"></i>Healthy</span>
-          <span class="sep">·</span>
-          <span>Click an <b>Amount</b> to edit it.</span>
-        </div>
-        <div id="grid" class="grid ag-theme-quartz"></div>
-        <ul id="cards" class="dep-cards"></ul>
-
-        <div class="actions">
-          <div class="edit-actions">
-            <button class="btn" id="save-btn" type="button" disabled>Save changes</button>
-            <button class="btn ghost" id="discard-btn" type="button" disabled>Discard</button>
-            <span class="muted small" id="edit-status"></span>
-          </div>
-          <div class="approve" id="approve-box">
-            <label class="check">
-              <input type="checkbox" id="approve-check">
-              <span id="approve-label">I approve this payout.</span>
-            </label>
-            <button class="btn primary" id="approve-btn" type="button" disabled>Approve &amp; pay</button>
-          </div>
-        </div>
-        <div id="action-error" class="alert error" hidden></div>
-      </section>
-
-      <section class="card" id="payout-card" hidden>
-        <div class="result-head">
-          <div>
-            <h2>Payout</h2>
-            <p class="muted" id="payout-meta"></p>
-          </div>
-          <button class="btn ghost" id="refresh-btn" type="button">Refresh</button>
-        </div>
-        <ul class="payout-list" id="payout-items"></ul>
-        <div class="payout-actions">
-          <a class="btn" id="report-link" href="#" target="_blank" rel="noopener">Share giving report</a>
-          <button class="btn ghost" id="requeue-btn" type="button" hidden>Cancel &amp; re-queue unclaimed</button>
-          <span class="muted small" id="requeue-note"></span>
-        </div>
-      </section>
-
-      <div class="two-col">
-        <section class="card">
-          <h2>Recent analyses</h2>
-          <ul class="list" id="history"><li class="muted">None yet.</li></ul>
-        </section>
-        <section class="card">
-          <h2>PayPal events</h2>
-          <ul class="list" id="events"><li class="muted">No webhook events yet.</li></ul>
-        </section>
-      </div>
-    </div>
     <div id="tab-getpaid" hidden>
       <div class="getpaid">
         <section class="card chat-card">
@@ -161,12 +57,6 @@
             <input type="checkbox" id="chase-toggle" checked>
             <span>Chase overdue invoices automatically (friendly → firm → final)</span>
           </label>
-          <label class="check small switch-row">
-            <input type="checkbox" id="auto-give">
-            <span>Automatically put <input type="number" id="auto-give-pct" min="0.5" max="10" step="0.5" value="2" class="inline-num">%
-              of every payment into your <b>upstream pot</b> for the open source you depend on</span>
-          </label>
-          <div class="pot-pill" id="pot-pill" hidden></div>
           <label class="small followup-row">After the final notice, keep following up every
             <input type="number" id="followup-days" min="3" max="30" value="7"> days until paid.</label>
           <ul class="list" id="inv-list"><li class="muted">No invoices yet.</li></ul>
@@ -256,7 +146,7 @@
       </section>
     </div>
 
-    <div id="tab-team" hidden>
+    <div id="tab-team">
       <section class="card" id="team-setup">
         <h2>Pay your team every month</h2>
         <p class="muted">Pick a repo you own. On the day you choose, Upstream pays its top
@@ -311,7 +201,6 @@
     of it; the AI can shift each share by a few points and must explain why, and you can always edit.
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.noStyle.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/getpaid.js"></script>
   <script src="/static/causes.js"></script>

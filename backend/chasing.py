@@ -26,7 +26,6 @@ MAX_VOICE_SAMPLES = 5
 DEFAULT_FOLLOWUP_DAYS = 7   # after the final notice, keep following up this often
 NEEDS_YOU_AFTER_DAYS = 7    # ...and hand it to the owner this long after the final
 TAX_RATE = 0.25       # suggested set-aside when a payment lands
-GIVE_BACK_RATE = 0.02  # suggested share for the open source you depend on
 _lock = threading.Lock()
 _last_refresh = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -57,22 +56,11 @@ def mark_paid(invoice_id: str, status: str = "PAID") -> bool:
     db.update_invoice(invoice_id, status=status, paid_at=db.now())
     who = inv["client_name"] or inv["client_email"]
     tax = round(inv["amount"] * TAX_RATE, 2)
-    auto = auto_give_back_percent()
-    give = round(inv["amount"] * (auto or GIVE_BACK_RATE * 100) / 100, 2)
-    if auto and give > 0:  # set aside on its own; it's only spent when an OSS payout is approved
-        db.add_pot(give, f"{auto:g}% of {who}'s payment of #{inv['number']}", invoice_id)
-        tail = f"${give:,.2f} ({auto:g}%) went into your upstream pot automatically."
-    else:
-        tail = f"Consider giving ${give:,.2f} to the open source you depend on."
     db.save_event({"event_type": "UPSTREAM.INVOICE.PAID", "resource": {"id": invoice_id},
-                   "amount": inv["amount"], "tax": tax, "give_back": give},
+                   "amount": inv["amount"], "tax": tax},
                   message=f"Payment landed: {who} paid ${inv['amount']:,.2f} (#{inv['number']}). "
-                          f"Set aside about ${tax:,.2f} for tax. {tail}", verified=None)
+                          f"Set aside about ${tax:,.2f} for tax.", verified=None)
     return True
-
-
-def auto_give_back_percent() -> float:
-    return float(db.get_setting("auto_give_back_percent", 0))
 
 
 def refresh_open(force: bool = False) -> list[str]:

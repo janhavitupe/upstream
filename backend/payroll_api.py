@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend import config, db, payroll
+from backend.paypal import payouts
 
 router = APIRouter(prefix="/api/payroll", tags=["Team payroll"])
 
@@ -193,3 +194,19 @@ def tick():
     """Run the scheduler once. Safe to call publicly: it only does what the schedules allow
     (previews in the heads-up window, payments on or after payday), and never pays twice."""
     return {"actions": payroll.tick()}
+
+
+@router.get("/batches/{batch_id}")
+def batch_status(batch_id: str):
+    """Who has received their pay: refreshed from PayPal (the fallback when webhooks are slow
+    or not set up)."""
+    if not db.get_batch(batch_id):
+        raise HTTPException(404, "Batch not found.")
+    data = payouts.get_batch(batch_id)
+    db.update_batch_status(batch_id, (data.get("batch_header") or {}).get("batch_status"))
+    for i in data.get("items", []):
+        sender_item_id = (i.get("payout_item") or {}).get("sender_item_id")
+        if sender_item_id:
+            db.update_item(batch_id, sender_item_id, status=i.get("transaction_status"),
+                           payout_item_id=i.get("payout_item_id"))
+    return db.get_batch(batch_id)

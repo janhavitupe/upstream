@@ -1,4 +1,4 @@
-"""PayPal Payouts: pay many maintainers in one batch (Module 1)."""
+"""PayPal Payouts: pay a whole team in one batch (team payroll)."""
 from __future__ import annotations
 
 import uuid
@@ -7,8 +7,8 @@ from .client import paypal
 
 
 def create_batch(items: list[dict], *,
-                 subject: str = "A thank-you for your open-source work",
-                 message: str = "Someone who depends on your project sent you this via Upstream.",
+                 subject: str = "You have a payment from Upstream",
+                 message: str = "Sent to you through Upstream.",
                  sender_batch_id: str | None = None) -> dict:
     """items: [{"email", "amount", "note"?, "item_id"?, "currency"?}]. One currency per batch."""
     body = {
@@ -24,7 +24,7 @@ def create_batch(items: list[dict], *,
                 "receiver": it["email"],
                 "amount": {"value": f"{float(it['amount']):.2f}",
                            "currency": it.get("currency", "USD")},
-                "note": (it.get("note") or "Thank you for maintaining open source.")[:4000],
+                "note": (it.get("note") or "Thank you for your work.")[:4000],
                 "sender_item_id": (it.get("item_id") or f"item-{i}")[:63],
             }
             for i, it in enumerate(items)

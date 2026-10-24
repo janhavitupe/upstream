@@ -39,7 +39,7 @@ def test_contributor_work_excludes_owner_bots_merges_and_unlinked(team_repo):
 
 
 def test_contributor_work_without_line_stats_warns(team_repo, monkeypatch):
-    from backend.oss import github
+    from backend import github
     monkeypatch.setattr(github, "contributor_stats", lambda o, r: None)
     people, warnings = payroll.contributor_work("me", "app", NOW - timedelta(days=30), NOW, set())
     assert people["alice"]["lines_changed"] is None and any("commits only" in w for w in warnings)
@@ -53,7 +53,7 @@ def test_split_pays_the_top_contributors_by_work(team_repo):
     both = payroll.compute_split("me/app", "me", 50, 5, NOW - timedelta(days=30), NOW)
     by = {c["login"]: c for c in both["contributors"]}
     assert by["alice"]["amount"] > by["bob"]["amount"] and round(sum(c["amount"] for c in both["contributors"]), 2) == 50
-    assert by["alice"]["email"] in config.DEMO_MAINTAINER_EMAILS  # sandbox stand-in
+    assert by["alice"]["email"] in config.DEMO_TEAM_EMAILS  # sandbox stand-in
 
 
 def test_split_ai_review_is_clamped(team_repo, fake_llm):

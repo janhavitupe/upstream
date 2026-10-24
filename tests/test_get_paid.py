@@ -1,4 +1,4 @@
-"""Get paid: the billing chat, every invoice route, payment detection, your style, give-back."""
+"""Get paid: the billing chat, every invoice route, payment detection, your style."""
 from datetime import date, timedelta
 
 import pytest
@@ -255,22 +255,12 @@ def test_reminders_use_the_ai_note_and_fall_back_when_it_is_bad(fake_paypal, fak
     assert db.get_invoice(inv["id"])["chase_stage"] == 2
 
 
-# ---------- give-back ----------
+# ---------- payment landed ----------
 
-def test_give_back_manual_and_automatic(client, fake_paypal):
+def test_payment_landed_suggests_tax_only(client, fake_paypal):
     a = _bill(fake_paypal, amount=300)
-    assert client.post(f"/api/getpaid/invoices/{a['id']}/give-back", json={}).status_code == 409  # unpaid
     fake_paypal.client_pays(a["id"])
-    client.post("/api/getpaid/check")
-    assert client.post(f"/api/getpaid/invoices/{a['id']}/give-back", json={"amount": 999}).status_code == 400
-    st = client.post(f"/api/getpaid/invoices/{a['id']}/give-back", json={}).json()
-    assert st["pot"] == {"balance": 6.0, "count": 1} and a["id"] in st["given_back"]
-    assert client.post(f"/api/getpaid/invoices/{a['id']}/give-back", json={}).status_code == 409
-    assert client.put("/api/getpaid/auto-give-back", json={"percent": 50}).status_code == 422
-    client.put("/api/getpaid/auto-give-back", json={"percent": 5})
-    b = _bill(fake_paypal, amount=200)
-    fake_paypal.client_pays(b["id"])
     st = client.post("/api/getpaid/check").json()
-    assert st["pot"]["balance"] == 16.0
-    assert any("went into your upstream pot automatically" in e["message"] for e in st["log"])
-    assert client.get("/health").json()["pot"] == 16.0
+    landed = next(e["message"] for e in st["log"] if e["event_type"] == "UPSTREAM.INVOICE.PAID")
+    assert "Set aside about $75.00 for tax." in landed and "open source" not in landed
+    assert "pot" not in st

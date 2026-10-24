@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def test_health_reports_configuration(client):
     h = client.get("/health").json()
     assert h["status"] == "ok" and h["paypal_base"].endswith("sandbox.paypal.com")
-    assert h["llm"] is False and h["pot"] == 0 and h["payroll_min_edit_minutes"] == 5
+    assert h["llm"] is False and "pot" not in h and h["payroll_min_edit_minutes"] == 5
 
 
 def test_dashboard_and_static_files_are_served(client):

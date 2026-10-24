@@ -87,23 +87,9 @@ def test_write_off_cancels_in_paypal():
     assert pp_invoices.get(inv["id"])["status"] == "CANCELLED"
 
 
-def test_oss_payout_reaches_paypal(client):
-    emails = config.DEMO_MAINTAINER_EMAILS
-    assert len(emails) >= 2, "DEMO_MAINTAINER_EMAILS must list sandbox accounts"
-    deps = [{"package": f"pkg{i}", "amount": 1.0, "percent": 50.0, "signals": {"x": 1},
-             "suggested_email": e, "explanation": "E2E"} for i, e in enumerate(emails[:2])]
-    aid = db.save_analysis({"repo": "e2e/check", "budget": 2.0, "dependencies": deps, "warnings": [],
-                            "explained_by": "rules", "revision": 1, "history": []})
-    r = client.post("/api/oss/payout", json={"analysis_id": aid, "revision": 1, "approved": True})
-    assert r.status_code == 200, r.text
-    status = client.get(f"/api/oss/payout/{r.json()['batch']['payout_batch_id']}").json()
-    assert len(status["items"]) == 2 and all(i["payout_item_id"] for i in status["items"])
-    again = client.post("/api/oss/payout", json={"analysis_id": aid, "revision": 1, "approved": True})
-    assert again.status_code == 409
-
-
-def test_payroll_pays_itself_on_payday(monkeypatch):
-    email = config.DEMO_MAINTAINER_EMAILS[0]
+def test_payroll_pays_itself_on_payday(client, monkeypatch):
+    assert config.DEMO_TEAM_EMAILS, "DEMO_TEAM_EMAILS must list sandbox accounts"
+    email = config.DEMO_TEAM_EMAILS[0]
 
     def split(repo, owner, total, top_n, since, until, emails=None):  # skip GitHub, keep PayPal
         return {"repo": repo, "owner_login": owner, "window_start": payroll._iso(since),
@@ -120,6 +106,8 @@ def test_payroll_pays_itself_on_payday(monkeypatch):
     assert payroll.tick(t(27)) == []
     run = db.runs_for_schedule(sid)[0]
     assert payouts.get_batch(run["batch_id"])["batch_header"]["payout_batch_id"] == run["batch_id"]
+    status = client.get(f"/api/payroll/batches/{run['batch_id']}").json()
+    assert len(status["items"]) == 1 and status["items"][0]["payout_item_id"]
 
 
 def test_retainer_subscription_is_created_with_approval_link():

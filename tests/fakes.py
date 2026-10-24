@@ -245,15 +245,13 @@ class FakeLLM:
 
 
 class FakeGitHub:
-    """Dict-backed GitHub: api[path] -> JSON, files[(owner, repo, path)] -> text, trees[...]."""
+    """Dict-backed GitHub: api[path] -> JSON."""
 
     def __init__(self):
         self.api: dict[str, object] = {}
-        self.files: dict[tuple[str, str, str], str] = {}
-        self.trees: dict[tuple[str, str], list[str]] = {}
 
     def api_get(self, path, params=None):
-        from backend.oss.github import NotFound
+        from backend.github import NotFound
         key = path
         if params and "page" in params:
             key = f"{path}?page={params['page']}"
@@ -264,9 +262,3 @@ class FakeGitHub:
                 return []
             raise NotFound(404, f"Not found on GitHub: {path}")
         return self.api[key]
-
-    def raw_file(self, owner, repo, ref, path):
-        return self.files.get((owner, repo, path))
-
-    def get_tree(self, owner, repo, branch):
-        return self.trees.get((owner, repo), [])

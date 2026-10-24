@@ -45,13 +45,11 @@ def test_create_validation(fake_paypal, amount, start, error):
 # ---------- approval and payments ----------
 
 def test_approval_and_payment_are_picked_up_once(fake_paypal):
-    db.set_setting("auto_give_back_percent", 2)
     r = _active(fake_paypal)
     assert r["status"] == "ACTIVE" and r["next_billing"] and r["last_payment"]
     retainers.refresh(r["id"])  # nothing new
     events = [e["event_type"] for e in db.list_events()]
     assert events.count("UPSTREAM.RETAINER.ACTIVATED") == 1 and events.count("UPSTREAM.RETAINER.PAYMENT") == 1
-    assert [p["amount"] for p in db.open_pot()] == [6.0]
     fake_paypal.subs[r["id"]]["billing_info"]["last_payment"] = {"time": "2026-11-23T10:00:00Z",
                                                                  "amount": {"value": "300.00"}}
     retainers.refresh(r["id"])  # the next month's charge

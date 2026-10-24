@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend import config  # noqa: E402
 from backend.agent import llm  # noqa: E402
-from backend.oss import github, signals  # noqa: E402
+from backend import github  # noqa: E402
 from backend.paypal import invoices, orders, payouts, subscriptions  # noqa: E402
 from backend.paypal.client import PayPalError, paypal  # noqa: E402
 
@@ -57,7 +57,7 @@ def test_config():
         report("FAIL", "Config: PAYPAL_BASE is sandbox", config.PAYPAL_BASE)
     else:
         report("PASS", "Config: PAYPAL_BASE is sandbox")
-    for label, value in [("DEMO_MAINTAINER_EMAILS", config.DEMO_MAINTAINER_EMAILS),
+    for label, value in [("DEMO_TEAM_EMAILS", config.DEMO_TEAM_EMAILS),
                          ("DEMO_CLIENT_EMAIL", config.DEMO_CLIENT_EMAIL),
                          ("DEMO_HOSPITAL_EMAIL", config.DEMO_HOSPITAL_EMAIL)]:
         if value:
@@ -74,11 +74,11 @@ def test_oauth():
 
 
 def test_payouts():
-    if not config.DEMO_MAINTAINER_EMAILS:
-        report("SKIP", "Payouts", "DEMO_MAINTAINER_EMAILS not set")
+    if not config.DEMO_TEAM_EMAILS:
+        report("SKIP", "Payouts", "DEMO_TEAM_EMAILS not set")
         return
     items = [{"email": e, "amount": 1.00, "note": "Upstream smoke test",
-              "item_id": f"smoke-{i}"} for i, e in enumerate(config.DEMO_MAINTAINER_EMAILS)]
+              "item_id": f"smoke-{i}"} for i, e in enumerate(config.DEMO_TEAM_EMAILS)]
     resp = check("Payouts: create batch", lambda: payouts.create_batch(
         items, sender_batch_id=f"smoke-{uuid.uuid4().hex[:12]}"))
     if not resp:
@@ -166,22 +166,13 @@ def test_github():
     repo = check("GitHub: repo info", lambda: github.repo_info("pallets", "flask"))
     if not repo:
         return
-    def source_repo():
-        src = signals.find_source_repo("click", "pypi")
-        if not src:
-            raise RuntimeError("no GitHub repo found for click")
-        return src
-
-    src = check("GitHub: PyPI -> source repo", source_repo)
-    if src:
-        info("click", "/".join(src))
     if not config.GITHUB_TOKEN:
         report("SKIP", "GitHub: token", "not set; limit is 60 requests/hour")
 
 
 def test_llm():
     if not config.llm_configured():
-        report("SKIP", "LLM", "LLM_API_KEY not set; rule-based explanations will be used")
+        report("SKIP", "LLM", "LLM_API_KEY not set; rule-based reasons will be used")
         return
     models = check(f"LLM: list models at {config.LLM_BASE_URL}", llm.list_models)
     if models is None:

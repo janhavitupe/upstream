@@ -23,12 +23,12 @@ os.environ.update({
     "PAYPAL_BASE": "https://api-m.sandbox.paypal.com",  # tests never touch live PayPal
     "PAYROLL_SCHEDULER": "0", "RENDER": "", "SMTP_HOST": "", "PAYPAL_WEBHOOK_ID": "",
     "DATABASE_URL": "",  # never the real database: tests wipe theirs before every test
-    "OSS_MONTHLY_CAP": "500", "PAYROLL_MONTHLY_CAP": "2000",
+    "PAYROLL_MONTHLY_CAP": "2000",
 })
 if not E2E:
     os.environ.update({
         "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "LLM_API_KEY": "", "GITHUB_TOKEN": "",
-        "DEMO_MAINTAINER_EMAILS": "m-a@example.com,m-b@example.com",
+        "DEMO_TEAM_EMAILS": "m-a@example.com,m-b@example.com",
         "DEMO_CLIENTS": "Acme=acme@example.com,Globex=globex@example.com",
     })
 
@@ -103,13 +103,11 @@ def fake_llm(monkeypatch):
 
 @pytest.fixture
 def fake_github(monkeypatch):
-    """GitHub served from dicts: set fake.api[path], fake.files[(owner, repo, path)], fake.trees."""
-    from backend.oss import github
+    """GitHub served from dicts: set fake.api[path]."""
+    from backend import github
     from tests.fakes import FakeGitHub
     fake = FakeGitHub()
     monkeypatch.setattr(github, "api_get", fake.api_get)
-    monkeypatch.setattr(github, "raw_file", fake.raw_file)
-    monkeypatch.setattr(github, "get_tree", fake.get_tree)
     return fake
 
 

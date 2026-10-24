@@ -4,14 +4,12 @@ from __future__ import annotations
 import re
 import threading
 import time
-from urllib.parse import quote
 
 import requests
 
 from backend import config
 
 API = "https://api.github.com"
-RAW = "https://raw.githubusercontent.com"
 CACHE_TTL = 600  # seconds
 
 _session = requests.Session()
@@ -75,23 +73,6 @@ def api_get(path: str, params: dict | None = None):
     return value
 
 
-def raw_file(owner: str, repo: str, ref: str, path: str) -> str | None:
-    """Fetch a file's text from raw.githubusercontent.com (doesn't use the API rate limit)."""
-    key = ("raw", owner, repo, ref, path)
-    found, value = _cached(key)
-    if found:
-        return value
-    url = f"{RAW}/{owner}/{repo}/{quote(ref)}/{quote(path)}"
-    r = _session.get(url, headers={"User-Agent": "upstream-hackathon"}, timeout=20)
-    value = r.text if r.status_code == 200 else None
-    _store(key, value)
-    return value
-
-
-def get_file(owner: str, repo: str, path: str) -> str | None:
-    return raw_file(owner, repo, "HEAD", path)
-
-
 REPO_RE = re.compile(r"(?:github\.com[/:])?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)")
 
 
@@ -123,6 +104,6 @@ def contributor_stats(owner: str, repo: str, attempts: int = 6) -> list[dict] | 
     return None
 
 
-def get_tree(owner: str, repo: str, branch: str) -> list[str]:
-    data = api_get(f"/repos/{owner}/{repo}/git/trees/{quote(branch)}", {"recursive": "1"})
-    return [t["path"] for t in data.get("tree", []) if t.get("type") == "blob"]
+def is_bot(login: str | None, name: str) -> bool:
+    who = f"{login or ''} {name}".lower()
+    return "[bot]" in who or any(b in who for b in ("dependabot", "renovate", "greenkeeper"))

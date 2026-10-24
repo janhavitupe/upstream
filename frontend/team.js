@@ -19,16 +19,9 @@ function showTab(name) {
     b.setAttribute("aria-selected", String(on));
   });
   document.querySelectorAll(".tab").forEach((b) => show($(`tab-${b.dataset.tab}`), b.dataset.tab === name));
-  if (name === "fund") {
-    if (["#team", "#getpaid", "#causes"].includes(location.hash)) {
-      history.replaceState(null, "", location.pathname);
-    }
-  } else {
-    history.replaceState(null, "", `#${name}`);
-  }
+  history.replaceState(null, "", name === "team" ? location.pathname : `#${name}`);
   if (name === "team") loadSchedules();
   if (name === "causes" && typeof loadCauses === "function") loadCauses();
-  if (name === "fund" && typeof loadPot === "function") loadPot();
   if (name === "getpaid" && typeof loadInvoices === "function") loadInvoices();
 }
 
@@ -153,7 +146,7 @@ async function loadSchedules() {
 
 // ---------- per-person payout status for paid months ----------
 
-const batchCache = {};  // batch id -> latest status from /api/oss/payout/{id}
+const batchCache = {};  // batch id -> latest status from /api/payroll/batches/{id}
 const PERSON_STATUS = {
   SUCCESS: ["Received ✅", "SUCCESS"], PENDING: ["Processing", "PENDING"],
   PROCESSING: ["Processing", "PENDING"], ONHOLD: ["On hold", "PENDING"],
@@ -181,7 +174,7 @@ async function refreshBatches() {
   const ids = [...new Set(lists.map((el) => el.dataset.batch))]
     .filter((id) => !batchCache[id] || !batchCache[id].items.every((i) => SETTLED.has(i.status)));
   await Promise.all(ids.map(async (id) => {
-    try { batchCache[id] = await api(`/api/oss/payout/${encodeURIComponent(id)}`); } catch { /* retry later */ }
+    try { batchCache[id] = await api(`/api/payroll/batches/${encodeURIComponent(id)}`); } catch { /* retry later */ }
   }));
   document.querySelectorAll(".people-status[data-batch]").forEach((el) => {
     el.innerHTML = batchHtml(el.dataset.batch);
@@ -291,7 +284,6 @@ $("t-schedules").addEventListener("click", async (e) => {
     alert(err.message);
   }
   loadSchedules();
-  loadEvents();
 });
 
 // ---------- live countdown + auto-refresh ----------
@@ -330,7 +322,7 @@ function refreshSoon() {
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    if (!document.activeElement?.matches(".amount-input")) { loadSchedules(); loadEvents(); }
+    if (!document.activeElement?.matches(".amount-input")) loadSchedules();
   }, 3000);
 }
 setInterval(() => { if (!$("tab-team").hidden) refreshSoon(); }, 15000);
@@ -338,4 +330,4 @@ setInterval(() => { if (!$("tab-team").hidden) refreshSoon(); }, 15000);
 let minEditMinutes = 5;
 api("/health").then((h) => { minEditMinutes = h.payroll_min_edit_minutes ?? 5; }).catch(() => {});
 
-if (["#team", "#getpaid", "#causes"].includes(location.hash)) showTab(location.hash.slice(1));
+showTab(["#getpaid", "#causes"].includes(location.hash) ? location.hash.slice(1) : "team");

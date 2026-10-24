@@ -70,7 +70,7 @@ pipeline {
             when { anyOf { expression { params.RUN_E2E }; expression { isNightly() } } }
             environment {
                 UPSTREAM_E2E = '1'
-                DEMO_MAINTAINER_EMAILS = 'maintainer-a@personal.example.com,maintainer-b@personal.example.com,maintainer-c@personal.example.com'
+                DEMO_TEAM_EMAILS = 'maintainer-a@personal.example.com,maintainer-b@personal.example.com,maintainer-c@personal.example.com'
                 DEMO_CLIENTS = 'Acme=acme-client@personal.example.com,Globex=globex-client@personal.example.com'
                 DEMO_HOSPITAL_EMAIL = 'city-hospital@business.example.com'
             }

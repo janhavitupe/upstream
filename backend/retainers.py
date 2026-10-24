@@ -111,14 +111,8 @@ def refresh(retainer_id: str | None = None, force: bool = False) -> list[str]:
 def _payment_landed(r: dict, paid: float, when: str):
     who = r["client_name"] or r["client_email"]
     tax = round(paid * chasing.TAX_RATE, 2)
-    auto = chasing.auto_give_back_percent()
-    tail = ""
-    if auto:
-        give = round(paid * auto / 100, 2)
-        if db.add_pot(give, f"{auto:g}% of {who}'s retainer payment", f"sub:{r['id']}:{when}"):
-            tail = f" ${give:,.2f} ({auto:g}%) went into your upstream pot automatically."
     _event("PAYMENT", r, f"Retainer payment landed: {who} paid {r['currency']} {paid:,.2f} for "
-                         f"{r['service']}. Set aside about ${tax:,.2f} for tax.{tail}")
+                         f"{r['service']}. Set aside about ${tax:,.2f} for tax.")
 
 
 def _event(kind: str, r: dict, message: str, **extra):

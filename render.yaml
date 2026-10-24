@@ -31,9 +31,7 @@ services:
         value: openai/gpt-oss-120b
       - key: INVOICER_NAME
         value: Upstream Studio
-      - key: OSS_MONTHLY_CAP
-        value: "500"
-      - key: DEMO_MAINTAINER_EMAILS
+      - key: DEMO_TEAM_EMAILS
         value: maintainer-a@personal.example.com,maintainer-b@personal.example.com,maintainer-c@personal.example.com
       - key: DEMO_CLIENT_EMAIL
         value: acme-client@personal.example.com

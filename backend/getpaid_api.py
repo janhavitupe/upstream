@@ -148,44 +148,6 @@ def write_off(invoice_id: str):
     return _invoice_view(db.get_invoice(invoice_id))
 
 
-class GiveBackIn(BaseModel):
-    amount: float | None = Field(None, gt=0, description="Defaults to 2% of the payment.")
-
-
-@router.post("/invoices/{invoice_id}/give-back")
-def give_back(invoice_id: str, body: GiveBackIn):
-    """Put part of a client payment into the upstream pot (once per payment). Nothing is
-    paid out here: the pot becomes the budget of an OSS payout you approve."""
-    inv = db.get_invoice(invoice_id)
-    if not inv:
-        raise HTTPException(404, "Invoice not found.")
-    paid = inv["amount"] if inv["status"] in chasing.PAID else round(inv["amount"] - chasing.owed(inv), 2)
-    if paid <= 0:
-        raise HTTPException(409, "Nothing has been paid on this invoice yet.")
-    amount = round(body.amount or paid * chasing.GIVE_BACK_RATE, 2)
-    if amount > paid:
-        raise HTTPException(400, f"You can give back at most the ${paid:,.2f} that was paid.")
-    who = inv["client_name"] or inv["client_email"]
-    if not db.add_pot(amount, f"from {who}'s payment of #{inv['number']}", invoice_id):
-        raise HTTPException(409, "You've already given back from this payment.")
-    db.save_event({"event_type": "UPSTREAM.INVOICE.GIVE_BACK", "resource": {"id": invoice_id},
-                   "amount": amount},
-                  message=f"Added ${amount:,.2f} from {who}'s payment to your upstream pot.",
-                  verified=None)
-    return state()
-
-
-class AutoGiveIn(BaseModel):
-    percent: float = Field(..., ge=0, le=10)
-
-
-@router.put("/auto-give-back")
-def set_auto_give_back(body: AutoGiveIn):
-    """Set aside this % of every client payment automatically (0 turns it off)."""
-    db.set_setting("auto_give_back_percent", round(body.percent, 1))
-    return state()
-
-
 class FollowupIn(BaseModel):
     days: int = Field(..., ge=3, le=30)
 
@@ -201,11 +163,7 @@ def set_followup(body: FollowupIn):
 def state():
     """Switches, the demo clock and the chasing / payment log for the Get paid tab."""
     log = db.list_events(20, prefixes=("UPSTREAM.CHASE.", "UPSTREAM.INVOICE.", "UPSTREAM.RETAINER."))
-    pot = db.open_pot()
     return {"chasing_paused": bool(db.get_setting("chasing_paused", False)),
-            "pot": {"balance": round(sum(p["amount"] for p in pot), 2), "count": len(pot)},
-            "given_back": sorted(db.given_back_invoices()),
-            "auto_give_back_percent": chasing.auto_give_back_percent(),
             "followup_days": chasing.followup_days(),
             "sandbox": "sandbox" in config.PAYPAL_BASE,
             "demo_offset_days": chasing.demo_offset_days(),
