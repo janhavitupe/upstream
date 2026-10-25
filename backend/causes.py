@@ -72,7 +72,11 @@ def _parse(text: str) -> dict:
     return {"looks_like_a_medical_bill": bool(data.get("looks_like_a_medical_bill")),
             "provider": (data.get("provider") or None), "patient": (data.get("patient") or None),
             "date": data.get("date") or None, "total": float(data["total"]) if _num(data.get("total")) else None,
-            "currency": (data.get("currency") or None), "line_items": items}
+            "currency": CURRENCY_SYMBOLS.get(data.get("currency"), data.get("currency") or None),
+            "line_items": items}
+
+
+CURRENCY_SYMBOLS = {"$": "USD", "US$": "USD", "€": "EUR", "£": "GBP", "₹": "INR"}
 
 
 def _num(v) -> bool:

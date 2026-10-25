@@ -255,7 +255,7 @@ def set_voice(body: VoiceIn):
 
 
 class PreviewIn(BaseModel):
-    tone: str = Field("friendly", pattern="^(friendly|firm|final)$")
+    tone: str = Field("friendly", pattern="^(friendly|firm|urgent|final)$")
     samples: list[str] | None = Field(None, description="Try samples before saving; "
                                                         "omit to use the saved ones.")
 
@@ -266,7 +266,7 @@ def preview_voice(body: PreviewIn):
     (or a sample one). Nothing is sent."""
     samples = (_clean_samples(body.samples) if body.samples is not None
                else db.get_setting("voice_samples", []))
-    days = {"friendly": 2, "firm": 8, "final": 15}[body.tone]
+    days = {"friendly": 2, "firm": 8, "urgent": 2, "final": 15}[body.tone]
     inv = next(iter(db.list_invoices(chasing.OPEN)), None) or {
         "number": "0042", "client_name": "Acme", "amount": 500.0, "currency": "USD",
         "due_date": (chasing.today() - chasing.timedelta(days=days)).isoformat(),

@@ -11,9 +11,13 @@ def _soon(days=14):
     return (date.today() + timedelta(days=days)).isoformat()
 
 
-def _bill(fake_paypal, client="Acme", amount=300, due=None):
-    return billing.create_invoice(client, [{"name": "Work", "unit_price": amount}],
-                                  due_date=due or _soon())
+def _bill(fake_paypal, client="Acme", amount=300, due=None, term=30):
+    """term: pretend it was sent this many days before it's due (short terms chase urgently)."""
+    inv = billing.create_invoice(client, [{"name": "Work", "unit_price": amount}],
+                                 due_date=due or _soon())
+    sent = date.fromisoformat(inv["due_date"]) - timedelta(days=term)
+    db.update_invoice(inv["id"], created_at=f"{sent.isoformat()}T09:00:00+00:00")
+    return inv
 
 
 # ---------- chat tools ----------

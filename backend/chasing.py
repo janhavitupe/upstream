@@ -21,6 +21,10 @@ PAID = ("PAID", "MARKED_AS_PAID")
 STAGES = [(1, "friendly", "Friendly reminder: invoice #{number}"),
           (7, "firm", "Second reminder: invoice #{number} is overdue"),
           (14, "final", "Final notice: invoice #{number}")]
+# A short deadline means the money is needed soon: skip the gentle stages and move faster
+SHORT_TERM_DAYS = 7  # due this many days (or fewer) after it was sent
+SHORT_STAGES = [(1, "urgent", "Urgent: invoice #{number} is overdue"),
+                (3, "final", "Final notice: invoice #{number}")]
 REFRESH_EVERY = timedelta(minutes=2)  # how often open invoices are re-checked with PayPal
 MAX_VOICE_SAMPLES = 5
 DEFAULT_FOLLOWUP_DAYS = 7   # after the final notice, keep following up this often
@@ -44,6 +48,12 @@ def today() -> date:
 
 def days_overdue(inv: dict) -> int:
     return (today() - date.fromisoformat(inv["due_date"])).days
+
+
+def stages_for(inv: dict) -> list[tuple[int, str, str]]:
+    """The reminder ladder for this invoice: faster and more urgent for short deadlines."""
+    term = (date.fromisoformat(inv["due_date"]) - date.fromisoformat(inv["created_at"][:10])).days
+    return SHORT_STAGES if term <= SHORT_TERM_DAYS else STAGES
 
 
 # ---------- paid detection ----------
@@ -115,6 +125,8 @@ def _day(iso: str) -> str:
 TONE_GUIDE = {
     "friendly": "gentle, assume good faith",
     "firm": "clear and direct, still polite",
+    "urgent": "urgent and direct: the deadline was short because the payment is needed now, "
+              "ask for payment today, still polite, no threats",
     "final": "serious final notice: say plainly this is the final reminder and ask for payment "
              "now, no threats",
     "follow-up": "persistent and factual after the final notice: state how many reminders have "
@@ -138,6 +150,9 @@ def write_reminder(inv: dict, tone: str, overdue: int, voice: list[str] | None =
         "firm": f"Hi {who}, invoice #{inv['number']} for ${amount:,.2f} is now {overdue} days "
                 "overdue. Please arrange payment this week, or let me know if something is "
                 "holding it up.",
+        "urgent": f"Hi {who}, invoice #{inv['number']} for ${amount:,.2f} was due on "
+                  f"{_day(inv['due_date'])} and is now overdue. This payment is needed urgently: "
+                  "please pay it today from this email, or reply if something is holding it up.",
         "final": f"Hi {who}, this is a final reminder that invoice #{inv['number']} for "
                  f"${amount:,.2f} is {overdue} days overdue. Please pay it as soon as possible.",
         "follow-up": f"Hi {who}, invoice #{inv['number']} for ${amount:,.2f} is still unpaid, "
@@ -186,8 +201,9 @@ def followup_days() -> int:
 def next_step(inv: dict) -> tuple[str, date] | None:
     """The next reminder this invoice will get: (tone, on which day)."""
     due = date.fromisoformat(inv["due_date"])
-    if inv["chase_stage"] < len(STAGES):
-        days, tone, _ = STAGES[inv["chase_stage"]]
+    stages = stages_for(inv)
+    if inv["chase_stage"] < len(stages):
+        days, tone, _ = stages[inv["chase_stage"]]
         return tone, due + timedelta(days=days)
     last = date.fromisoformat(inv["last_reminder_day"]) if inv.get("last_reminder_day") else today()
     return "follow-up", last + timedelta(days=followup_days())
@@ -205,23 +221,24 @@ def chase_due() -> list[str]:
         if inv["client_email"].lower() in skip or (inv["client_name"] or "").lower() in skip_names:
             continue
         overdue = days_overdue(inv)
-        if overdue < STAGES[0][0]:
+        stages = stages_for(inv)
+        if overdue < stages[0][0]:
             continue
         stage = inv["chase_stage"]
-        if stage < len(STAGES):
+        if stage < len(stages):
             # The reminder that fits today; earlier ones that were missed (the app was asleep,
             # or the demo clock jumped) are skipped, never sent back to back
-            target = sum(1 for threshold, _, _ in STAGES if overdue >= threshold)
+            target = sum(1 for threshold, _, _ in stages if overdue >= threshold)
             if target <= stage:
                 continue
-            _, tone, subject = STAGES[target - 1]
+            _, tone, subject = stages[target - 1]
         else:
             # After the final notice: keep following up every few days until it's paid
             tone, on = next_step(inv)
             if now_day < on:
                 continue
             target = stage + 1
-            subject = f"Still unpaid: invoice #{{number}} ({target - len(STAGES)} after final notice)"
+            subject = f"Still unpaid: invoice #{{number}} ({target - len(stages)} after final notice)"
         # Never two reminders on the same real day, except when the demo clock is moving
         if inv["last_reminder_at"] and inv["last_reminder_at"][:10] == db.now()[:10] \
                 and not demo_offset_days():
@@ -234,7 +251,7 @@ def chase_due() -> list[str]:
             continue
         fields = {"chase_stage": target, "last_reminder_at": db.now(),
                   "last_reminder_day": now_day.isoformat()}
-        if target == len(STAGES):
+        if target == len(stages):
             fields["final_day"] = now_day.isoformat()
         db.update_invoice(inv["id"], **fields)
         who = inv["client_name"] or inv["client_email"]

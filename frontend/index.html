@@ -55,7 +55,7 @@
           </div>
           <label class="check small switch-row">
             <input type="checkbox" id="chase-toggle" checked>
-            <span>Chase overdue invoices automatically (friendly → firm → final)</span>
+            <span>Chase overdue invoices automatically (friendly → firm → final; urgent → final when the deadline was a week or less)</span>
           </label>
           <label class="small followup-row">After the final notice, keep following up every
             <input type="number" id="followup-days" min="3" max="30" value="7"> days until paid.</label>
@@ -99,6 +99,7 @@
             <select id="voice-tone">
               <option value="friendly">friendly</option>
               <option value="firm">firm</option>
+              <option value="urgent">urgent</option>
               <option value="final">final</option>
             </select><span>reminder</span></label>
           <button class="btn" id="voice-preview" type="button">Preview</button>
