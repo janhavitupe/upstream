@@ -49,10 +49,14 @@ CREATE TABLE IF NOT EXISTS payroll_schedules (
     id               TEXT PRIMARY KEY,
     repo             TEXT NOT NULL,
     owner_login      TEXT NOT NULL,        -- excluded from the split: they're paying
-    total            REAL NOT NULL,        -- monthly amount, shared by the top contributors
-    pay_day          INTEGER NOT NULL,     -- 1-28, every month
+    total            REAL NOT NULL,        -- amount each payday, shared by the top contributors
+    pay_day          INTEGER NOT NULL,     -- monthly: 1-28, weekly: 0 (Mon) - 6 (Sun), daily: unused
     top_n            INTEGER NOT NULL,
-    notice_days      INTEGER NOT NULL,     -- heads-up before payday
+    notice_days      INTEGER NOT NULL,     -- heads-up before payday (if notice_minutes is empty)
+    frequency        TEXT NOT NULL DEFAULT 'monthly',  -- daily, weekly or monthly
+    pay_time         TEXT NOT NULL DEFAULT '00:00',    -- HH:MM in tz
+    tz               TEXT NOT NULL DEFAULT 'UTC',      -- the owner's time zone, e.g. Asia/Kolkata
+    notice_minutes   INTEGER,                          -- heads-up before payday
     emails           TEXT NOT NULL,        -- JSON {login: paypal email}
     active           INTEGER NOT NULL,
     created_at       TEXT NOT NULL,
@@ -62,7 +66,7 @@ CREATE TABLE IF NOT EXISTS payroll_schedules (
 CREATE TABLE IF NOT EXISTS payroll_runs (
     id            TEXT PRIMARY KEY,
     schedule_id   TEXT NOT NULL REFERENCES payroll_schedules(id),
-    period        TEXT NOT NULL,           -- YYYY-MM of the payday
+    period        TEXT NOT NULL,           -- YYYY-MM-DD, YYYY-Www or YYYY-MM of the payday
     status        TEXT NOT NULL,           -- preview | skipped | paid | failed
     created_at    TEXT NOT NULL,
     pay_after     TEXT NOT NULL,           -- not before payday, and not before the heads-up ran
@@ -257,7 +261,11 @@ NEW_COLUMNS = {"invoices": [("last_reminder_day", "TEXT"), ("final_day", "TEXT")
                             ("needs_you_at", "TEXT"), ("viewed", "INTEGER"),
                             ("amount_due", "REAL"),
                             ("partial_allowed", "INTEGER NOT NULL DEFAULT 0"),
-                            ("written_off", "INTEGER NOT NULL DEFAULT 0")]}
+                            ("written_off", "INTEGER NOT NULL DEFAULT 0")],
+               "payroll_schedules": [("frequency", "TEXT NOT NULL DEFAULT 'monthly'"),
+                                     ("pay_time", "TEXT NOT NULL DEFAULT '00:00'"),
+                                     ("tz", "TEXT NOT NULL DEFAULT 'UTC'"),
+                                     ("notice_minutes", "INTEGER")]}
 
 
 def _columns(c, table: str) -> set[str]:
@@ -348,11 +356,13 @@ def create_schedule(s: dict) -> str:
     ts = now()
     with connect() as c:
         c.execute("INSERT INTO payroll_schedules (id, repo, owner_login, total, pay_day, top_n, "
-                  "notice_days, emails, active, created_at, approved_at, last_window_end) "
-                  "VALUES (?,?,?,?,?,?,?,?,1,?,?,?)",
-                  (sid, s["repo"], s["owner_login"], s["total"], s["pay_day"], s["top_n"],
-                   s["notice_days"], json.dumps(s.get("emails") or {}), ts, ts,
-                   s.get("last_window_end")))
+                  "notice_days, emails, active, created_at, approved_at, last_window_end, "
+                  "frequency, pay_time, tz, notice_minutes) "
+                  "VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)",
+                  (sid, s["repo"], s["owner_login"], s["total"], s.get("pay_day", 1), s["top_n"],
+                   s.get("notice_days", 0), json.dumps(s.get("emails") or {}), ts, ts,
+                   s.get("last_window_end"), s.get("frequency", "monthly"),
+                   s.get("pay_time", "00:00"), s.get("tz", "UTC"), s.get("notice_minutes")))
     return sid
 
 

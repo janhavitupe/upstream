@@ -149,10 +149,10 @@
 
     <div id="tab-team">
       <section class="card" id="team-setup">
-        <h2>Pay your team every month</h2>
-        <p class="muted">Pick a repo you own. On the day you choose, Upstream pays its top
-          contributors from your monthly total, split by the work they did that month. You get a
-          heads-up before each payday and can skip or edit it.</p>
+        <h2>Pay your team automatically</h2>
+        <p class="muted">Pick a repo you own and how often to pay: every day, week or month, at
+          the time you choose. Upstream pays its top contributors, split by the work they did since
+          the last payday. You get a heads-up before each payday and can skip or edit it.</p>
         <form id="team-form" class="analyze-form">
           <label class="field grow"><span>Your repository</span>
             <input id="t-repo" placeholder="owner/repo" value="expressjs/express" required
@@ -160,14 +160,29 @@
           <label class="field"><span>Your GitHub login</span>
             <input id="t-owner" placeholder="you" value="wesleytodd" required autocomplete="off"
                    spellcheck="false"></label>
-          <label class="field"><span>Monthly total (USD)</span>
+          <label class="field"><span>Amount each payday (USD)</span>
             <input id="t-total" type="number" min="1" step="1" value="50" required></label>
-          <label class="field"><span>Pay day (1-28)</span>
+          <label class="field"><span>Pay</span>
+            <select id="t-freq">
+              <option value="monthly">Every month</option>
+              <option value="weekly">Every week</option>
+              <option value="daily">Every day</option>
+            </select></label>
+          <label class="field" id="t-day-field"><span>Day of the month (1-28)</span>
             <input id="t-day" type="number" min="1" max="28" value="1" required></label>
+          <label class="field" id="t-weekday-field" hidden><span>Day of the week</span>
+            <select id="t-weekday">
+              <option value="0">Monday</option><option value="1">Tuesday</option>
+              <option value="2">Wednesday</option><option value="3">Thursday</option>
+              <option value="4" selected>Friday</option><option value="5">Saturday</option>
+              <option value="6">Sunday</option>
+            </select></label>
+          <label class="field"><span>At (<span id="t-tz-name">your time</span>)</span>
+            <input id="t-time" type="time" value="21:30" required></label>
           <label class="field"><span>Top contributors</span>
             <input id="t-top" type="number" min="1" max="50" value="5" required></label>
-          <label class="field"><span>Heads-up (days)</span>
-            <input id="t-notice" type="number" min="0" max="7" value="2" required></label>
+          <label class="field"><span>Heads-up (hours before)</span>
+            <input id="t-notice" type="number" min="0" max="168" step="0.5" value="24" required></label>
           <button class="btn primary" id="t-preview-btn" type="submit">Preview split</button>
         </form>
         <div id="t-progress" class="progress" hidden>
@@ -190,8 +205,8 @@
 
       <section class="card">
         <h2>Your payroll schedules</h2>
-        <p class="muted small">Upstream checks every minute while it's open, and a daily check at
-          <b>9:30 PM IST</b> wakes it up otherwise, so payday runs even with every window closed.
+        <p class="muted small">Every schedule keeps its own day and time. Upstream checks them all
+          every minute, and a wake-up every 15 minutes keeps it running with every window closed.
           Payments happen on their own; you don't need to do anything.</p>
         <div id="t-schedules"><p class="muted">No schedules yet.</p></div>
       </section>

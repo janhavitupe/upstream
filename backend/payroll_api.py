@@ -51,10 +51,16 @@ def preview(body: PreviewIn):
 class ScheduleIn(BaseModel):
     repo: str
     owner_login: str
-    total: float = Field(..., gt=0)
-    pay_day: int = Field(..., ge=1, le=28, description="Day of the month (1-28).")
+    total: float = Field(..., gt=0, description="Amount each payday.")
+    frequency: str = Field("monthly", pattern="^(daily|weekly|monthly)$")
+    pay_day: int = Field(1, ge=0, le=28, description="Monthly: day of the month (1-28). "
+                                                     "Weekly: 0 = Monday ... 6 = Sunday.")
+    pay_time: str = Field("00:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$", examples=["21:30"])
+    tz: str = Field("UTC", examples=["Asia/Kolkata"], description="Your time zone.")
     top_n: int = Field(5, ge=1, le=50)
     notice_days: int = Field(2, ge=0, le=7, description="Heads-up before each payday.")
+    notice_hours: float | None = Field(None, ge=0, le=168, description="Heads-up in hours "
+                                       "(overrides notice_days; must be under a day for daily).")
     emails: dict[str, str] = Field(default_factory=dict)
     approved: bool = False
 
@@ -66,7 +72,19 @@ def create_schedule(body: ScheduleIn):
                                  "your standing approval (approved: true).")
     if body.total > config.PAYROLL_MONTHLY_CAP:
         raise HTTPException(400, f"The payroll cap is ${config.PAYROLL_MONTHLY_CAP:.2f} a month.")
-    sid = db.create_schedule({**body.model_dump(exclude={"approved"}),
+    try:
+        payroll.zone(body.tz)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if body.frequency == "monthly" and not 1 <= body.pay_day <= 28:
+        raise HTTPException(400, "Monthly pay day must be 1-28.")
+    if body.frequency == "weekly" and not 0 <= body.pay_day <= 6:
+        raise HTTPException(400, "Weekly pay day must be 0 (Monday) to 6 (Sunday).")
+    minutes = round(body.notice_hours * 60) if body.notice_hours is not None else None
+    if body.frequency == "daily" and (minutes if minutes is not None else body.notice_days * 1440) >= 1440:
+        raise HTTPException(400, "A daily payroll's heads-up must be shorter than a day.")
+    sid = db.create_schedule({**body.model_dump(exclude={"approved", "notice_hours"}),
+                              "notice_minutes": minutes,
                               "owner_login": body.owner_login.lstrip("@")})
     # Make this month's preview now if the heads-up has started; never pay in this call
     payroll.tick(pay=False)

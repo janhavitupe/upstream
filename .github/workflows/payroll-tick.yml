@@ -1,13 +1,14 @@
-# Wakes the Render app once a day so payroll and invoice chasing run on time even while the free
-# instance sleeps. The check only does what each schedule allows (previews in the heads-up
-# window, payments on or after payday) and never pays twice, so running it is always safe.
+# Keeps the Render app on time while the free instance sleeps. Every payroll schedule keeps its
+# own day, time and time zone in the database; the app checks them all every minute while it's
+# awake, and this wakes it every 15 minutes so nobody's payday is missed. It also runs invoice
+# chasing and retainer heads-ups. Each check only does what's due and never pays twice.
 # Setup: repo Settings -> Secrets and variables -> Actions -> Variables -> UPSTREAM_URL
 # (e.g. https://upstream-xxxx.onrender.com)
-name: Daily check (payroll and invoice chasing)
+name: Wake-up check (payroll, invoice chasing, retainers)
 
 on:
   schedule:
-    - cron: "0 16 * * *"  # 16:00 UTC (21:30 IST) every day
+    - cron: "*/15 * * * *"  # every 15 minutes (GitHub may start runs a few minutes late)
   workflow_dispatch:
 
 jobs:

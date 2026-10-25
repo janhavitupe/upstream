@@ -1,4 +1,5 @@
-"""Monthly team payroll: pay the top contributors of a repo you own, on a set day.
+"""Team payroll: pay the top contributors of a repo you own every day, week or month, at a set
+time in the owner's time zone.
 
 Each person is paid for work done (commits) times its size (lines changed), with diminishing
 returns; the AI reads each person's commit messages and
@@ -12,6 +13,7 @@ import calendar
 import threading
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from backend import config, db
 from backend.agent.explain import MAX_ADJUST_POINTS, review_contributors
@@ -130,37 +132,86 @@ def compute_split(repo_ref: str, owner_login: str, total: float, top_n: int,
     }
 
 
-# ---------- the monthly schedule ----------
+# ---------- the schedule ----------
+# Every schedule is a row in the database with its own frequency, day, time and time zone.
+# One timer checks them all (every minute while the app is awake, plus the wake-up job), so
+# any number of people can pick any times: nobody's schedule lives outside the database.
+
+FREQUENCIES = ("daily", "weekly", "monthly")
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def zone(name: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(name or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"Unknown time zone: {name}")
+
 
 def pay_date(year: int, month: int, pay_day: int) -> date:
     return date(year, month, min(pay_day, calendar.monthrange(year, month)[1]))
 
 
-def due_period(schedule: dict, now: datetime) -> tuple[str, date] | None:
-    """This month's payday, unless the schedule started after it."""
-    pd = pay_date(now.year, now.month, schedule["pay_day"])
-    if pd < _parse(schedule["created_at"]).date():
-        return None
-    return f"{pd:%Y-%m}", pd
+def notice(schedule: dict) -> timedelta:
+    """How long before payday the heads-up starts."""
+    if schedule.get("notice_minutes") is not None:
+        return timedelta(minutes=schedule["notice_minutes"])
+    return timedelta(days=schedule["notice_days"])
 
 
-def next_payday(schedule: dict, now: datetime) -> date:
-    due = due_period(schedule, now)
-    if due:
-        run = db.run_for_period(schedule["id"], due[0])
+def _payday_in(schedule: dict, day: date) -> tuple[str, date]:
+    """The payday of the period containing this (local) day, and the period's key."""
+    freq = schedule.get("frequency") or "monthly"
+    if freq == "daily":
+        return day.isoformat(), day
+    if freq == "weekly":
+        monday = day - timedelta(days=day.weekday())
+        year, week, _ = day.isocalendar()
+        return f"{year}-W{week:02d}", monday + timedelta(days=schedule["pay_day"])
+    return f"{day:%Y-%m}", pay_date(day.year, day.month, schedule["pay_day"])
+
+
+def _next_period_day(schedule: dict, day: date) -> date:
+    freq = schedule.get("frequency") or "monthly"
+    if freq == "daily":
+        return day + timedelta(days=1)
+    if freq == "weekly":
+        return day + timedelta(days=7)
+    return (day.replace(day=1) + timedelta(days=32)).replace(day=1)
+
+
+def paydays(schedule: dict, now: datetime, count: int = 2) -> list[tuple[str, datetime]]:
+    """This period's payday and the next ones, as (period key, payday in UTC). Paydays from
+    before the day the schedule was created are left out: it never pays for the past. (Set up
+    on payday after the time has passed, it pays that day, once the heads-up has run.)"""
+    tz = zone(schedule.get("tz"))
+    hh, mm = (int(x) for x in (schedule.get("pay_time") or "00:00").split(":"))
+    created_day = _parse(schedule["created_at"]).astimezone(tz).date()
+    out, day = [], now.astimezone(tz).date()
+    for _ in range(count):
+        period, payday = _payday_in(schedule, day)
+        if payday >= created_day:
+            out.append((period, datetime.combine(payday, time(hh, mm), tzinfo=tz)
+                        .astimezone(timezone.utc)))
+        day = _next_period_day(schedule, day)
+    return out
+
+
+def next_payday(schedule: dict, now: datetime) -> datetime:
+    """The next payday that hasn't been paid or skipped yet."""
+    for period, at in paydays(schedule, now, count=3):
+        run = db.run_for_period(schedule["id"], period)
         if not run or run["status"] == "preview":
-            return due[1]
-    y, m = (now.year + 1, 1) if now.month == 12 else (now.year, now.month + 1)
-    return pay_date(y, m, schedule["pay_day"])
+            return at
+    return paydays(schedule, now, count=4)[-1][1]
 
 
-def make_preview(schedule: dict, period: str, payday: date, now: datetime) -> dict | None:
+def make_preview(schedule: dict, period: str, payday: datetime, now: datetime) -> dict | None:
     since = (_parse(schedule["last_window_end"]) if schedule.get("last_window_end")
              else now - timedelta(days=30))
     split = compute_split(schedule["repo"], schedule["owner_login"], schedule["total"],
                           schedule["top_n"], since, now, schedule["emails"])
-    payday_start = datetime.combine(payday, time(0, 0), tzinfo=timezone.utc)
-    pay_after = max(payday_start, now + timedelta(days=schedule["notice_days"]),
+    pay_after = max(payday, now + notice(schedule),
                     now + timedelta(minutes=config.PAYROLL_MIN_EDIT_MINUTES))
     run = {"id": uuid.uuid4().hex[:12], "schedule_id": schedule["id"], "period": period,
            "status": "preview", "pay_after": _iso(pay_after), "window_start": split["window_start"],
@@ -170,7 +221,7 @@ def make_preview(schedule: dict, period: str, payday: date, now: datetime) -> di
     total = sum(r["amount"] for r in split["contributors"])
     db.save_event({"event_type": "UPSTREAM.PAYROLL.PREVIEW", "resource": {"id": run["id"]}},
                   message=f"Heads-up: {split['repo']} payroll of ${total:.2f} to "
-                          f"{len(split['contributors'])} contributor(s) pays on {pay_after:%b %d}. "
+                          f"{len(split['contributors'])} contributor(s) pays on {pay_after:%b %d, %H:%M} UTC. "
                           "Skip or edit it before then.", verified=None)
     return db.get_run(run["id"])
 
@@ -244,22 +295,22 @@ def tick(now: datetime | None = None, pay: bool = True) -> list[str]:
     actions = []
     with _tick_lock:
         for s in db.list_schedules(active_only=True):
-            due = due_period(s, now)
-            if not due:
-                continue
-            period, payday = due
-            run = db.run_for_period(s["id"], period)
-            heads_up_from = datetime.combine(payday - timedelta(days=s["notice_days"]), time(0, 0),
-                                             tzinfo=timezone.utc)
-            try:
-                if not run and now >= heads_up_from:
-                    run = make_preview(s, period, payday, now)
-                    if run:
-                        actions.append(f"preview {s['repo']} {period}")
-                if pay and run and run["status"] == "preview" and now >= _parse(run["pay_after"]):
-                    pay_run(run["id"])
-                    actions.append(f"paid {s['repo']} {period}")
-            except (ValueError, PayPalError, github.GitHubError) as e:
-                actions.append(f"error {s['repo']} {period}: {e}")
-                print(f"[payroll] {s['repo']} {period}: {e}")
+            # This period's payday and the next one: a heads-up can start before the period
+            # does (e.g. on the 30th for a payday on the 1st)
+            for period, payday in paydays(s, now):
+                run = db.run_for_period(s["id"], period)
+                try:
+                    if not run and now >= payday - notice(s):
+                        run = make_preview(s, period, payday, now)
+                        if run:
+                            actions.append(f"preview {s['repo']} {period}")
+                    if pay and run and run["status"] == "preview" and now >= _parse(run["pay_after"]):
+                        run = pay_run(run["id"])
+                        actions.append(f"paid {s['repo']} {period}")
+                except (ValueError, PayPalError, github.GitHubError) as e:
+                    actions.append(f"error {s['repo']} {period}: {e}")
+                    print(f"[payroll] {s['repo']} {period}: {e}")
+                    break
+                if run and run["status"] in ("preview", "paying"):
+                    break  # one open payday at a time, so work is never counted twice
     return actions

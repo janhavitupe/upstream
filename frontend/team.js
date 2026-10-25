@@ -55,6 +55,44 @@ function personCard(r, { editable = false, edits = {} } = {}) {
     </li>`;
 }
 
+// ---------- when to pay ----------
+
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+$("t-tz-name").textContent = TZ;
+
+function fmtTime(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function hoursText(h) {
+  return h >= 24 && h % 24 === 0 ? `${h / 24} day${h === 24 ? "" : "s"}` : `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+// "every day at 9:30 PM", "every Friday at 9:30 PM", "on day 1 of every month at 9:30 PM"
+function whenText(freq, day, time) {
+  const at = `at ${fmtTime(time)}`;
+  if (freq === "daily") return `every day ${at}`;
+  if (freq === "weekly") return `every ${WEEKDAYS[day]} ${at}`;
+  return `on day ${day} of every month ${at}`;
+}
+
+function formWhen() {
+  const freq = $("t-freq").value;
+  return { freq, day: freq === "weekly" ? Number($("t-weekday").value) : Number($("t-day").value),
+           time: $("t-time").value || "00:00", notice: Number($("t-notice").value) };
+}
+
+$("t-freq").addEventListener("change", () => {
+  const freq = $("t-freq").value;
+  show($("t-day-field"), freq === "monthly");
+  show($("t-weekday-field"), freq === "weekly");
+  $("t-day").required = freq === "monthly";
+  if (freq === "daily" && Number($("t-notice").value) >= 24) $("t-notice").value = 1;
+  if (teamPreview) renderPreview();
+});
+
 // ---------- preview + start ----------
 
 $("team-form").addEventListener("submit", async (e) => {
@@ -82,7 +120,7 @@ $("team-form").addEventListener("submit", async (e) => {
 
 function renderPreview() {
   const p = teamPreview;
-  const day = Number($("t-day").value), notice = Number($("t-notice").value);
+  const w = formWhen();
   show($("t-preview"));
   $("t-preview-title").textContent = `${p.repo}: last 30 days`;
   $("t-preview-meta").textContent = [
@@ -94,10 +132,10 @@ function renderPreview() {
     `<div class="alert warn">${esc(w)}</div>`).join("");
   $("t-people").innerHTML = p.contributors.map((r) => personCard(r)).join("");
   $("t-approve-label").textContent =
-    `I approve paying ${money(p.total)} on day ${day} of every month to my top ` +
+    `I approve paying ${money(p.total)} ${whenText(w.freq, w.day, w.time)} (${TZ}) to my top ` +
     `${$("t-top").value} contributors, split by their work. ` +
-    (notice ? `I'll get a heads-up ${notice} day${notice === 1 ? "" : "s"} before and can skip or edit it.`
-            : `I'll get a heads-up ${minEditMinutes} minutes before it pays, to skip or edit it.`);
+    (w.notice ? `I'll get a heads-up ${hoursText(w.notice)} before and can skip or edit it.`
+              : `I'll get a heads-up ${minEditMinutes} minutes before it pays, to skip or edit it.`);
   $("t-approve").checked = false;
   $("t-start-btn").disabled = true;
 }
@@ -105,7 +143,7 @@ function renderPreview() {
 $("t-approve").addEventListener("change", () => {
   $("t-start-btn").disabled = !$("t-approve").checked || !teamPreview?.contributors.length;
 });
-["t-day", "t-notice", "t-top", "t-total"].forEach((id) =>
+["t-day", "t-weekday", "t-time", "t-notice", "t-top", "t-total"].forEach((id) =>
   $(id).addEventListener("input", () => { if (teamPreview) renderPreview(); }));
 
 $("t-start-btn").addEventListener("click", async () => {
@@ -116,9 +154,9 @@ $("t-start-btn").addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({
         repo: teamPreview.repo, owner_login: teamPreview.owner_login,
-        total: Number($("t-total").value), pay_day: Number($("t-day").value),
-        top_n: Number($("t-top").value), notice_days: Number($("t-notice").value),
-        approved: true,
+        total: Number($("t-total").value), frequency: formWhen().freq, pay_day: formWhen().day,
+        pay_time: formWhen().time, tz: TZ, top_n: Number($("t-top").value),
+        notice_hours: formWhen().notice, approved: true,
       }),
     });
     show($("t-preview"), false);
@@ -220,12 +258,13 @@ function scheduleHtml(s) {
     <div class="schedule" data-schedule="${esc(s.id)}">
       <div class="row">
         <div><b>${esc(s.repo)}</b>
-          <div class="muted small">${money(s.total)} a month to the top ${s.top_n} contributors ·
-            day ${s.pay_day} · heads-up ${s.notice_days} day${s.notice_days === 1 ? "" : "s"} before ·
+          <div class="muted small">${money(s.total)} ${whenText(s.frequency, s.pay_day, s.pay_time)}
+            (${esc(s.tz)}) to the top ${s.top_n} contributors ·
+            heads-up ${hoursText(s.notice_minutes != null ? s.notice_minutes / 60 : s.notice_days * 24)} before ·
             excludes @${esc(s.owner_login)}</div></div>
         <div class="btn-row">
           <span class="status ${s.active ? "SUCCESS" : "PENDING"}">${s.active ? "Active" : "Paused"}</span>
-          <span class="muted small">Next payday ${fmtDate(s.next_payday)}</span>
+          <span class="muted small">Next payday ${fmtWhen(s.next_payday)}</span>
           <button class="btn ghost" data-act="${s.active ? "pause" : "resume"}">${s.active ? "Pause" : "Resume"}</button>
         </div>
       </div>
