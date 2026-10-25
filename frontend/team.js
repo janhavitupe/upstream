@@ -1,5 +1,5 @@
 "use strict";
-// "Pay your team": monthly payroll for a repo you own. Uses $, api, esc, money, show and
+// "Pay your team": daily, weekly or monthly payroll for a repo you own. Uses $, api, esc, money, show and
 // setError from app.js.
 
 let teamPreview = null;  // last preview split, used to create the schedule
