@@ -7,7 +7,7 @@ name: Daily check (payroll and invoice chasing)
 
 on:
   schedule:
-    - cron: "0 6 * * *"  # 06:00 UTC (11:30 IST) every day
+    - cron: "0 16 * * *"  # 16:00 UTC (21:30 IST) every day
   workflow_dispatch:
 
 jobs:
