@@ -1,8 +1,8 @@
 """Automatic invoice chasing (Module 2). Money in runs on its own, until it is paid.
 
 Each tick: refresh open invoices from PayPal (paid ones stop being chased and produce a
-"payment landed" note), then send the next reminder for each overdue invoice, getting firmer
-each time. Respects the global pause and per-client "don't chase". In the sandbox a demo
+"payment landed" note), then send one reminder a day for each overdue invoice, getting firmer
+the longer it goes unpaid, until it's paid or the owner steps in. Respects the global pause and per-client "don't chase". In the sandbox a demo
 clock can move "today" forward, so a week of chasing fits in a demo video.
 """
 from __future__ import annotations
@@ -17,18 +17,18 @@ from backend.paypal.client import PayPalError
 
 OPEN = ("SENT", "UNPAID", "PARTIALLY_PAID", "SCHEDULED")
 PAID = ("PAID", "MARKED_AS_PAID")
-# (days overdue before this reminder, tone, email subject)
+# A reminder goes out every day once overdue. (from this many days overdue, tone, subject)
 STAGES = [(1, "friendly", "Friendly reminder: invoice #{number}"),
-          (7, "firm", "Second reminder: invoice #{number} is overdue"),
-          (14, "final", "Final notice: invoice #{number}")]
+          (8, "firm", "Reminder: invoice #{number} is {days} days overdue"),
+          (15, "urgent", "Urgent: invoice #{number} is {days} days overdue"),
+          (22, "final", "Final notice: invoice #{number} is {days} days overdue")]
 # A short deadline means the money is needed soon: skip the gentle stages and move faster
 SHORT_TERM_DAYS = 7  # due this many days (or fewer) after it was sent
 SHORT_STAGES = [(1, "urgent", "Urgent: invoice #{number} is overdue"),
-                (3, "final", "Final notice: invoice #{number}")]
+                (3, "final", "Final notice: invoice #{number} is {days} days overdue")]
 REFRESH_EVERY = timedelta(minutes=2)  # how often open invoices are re-checked with PayPal
 MAX_VOICE_SAMPLES = 5
-DEFAULT_FOLLOWUP_DAYS = 7   # after the final notice, keep following up this often
-NEEDS_YOU_AFTER_DAYS = 7    # ...and hand it to the owner this long after the final
+NEEDS_YOU_AFTER_DAYS = 7    # hand it to the owner this long after the first final notice
 TAX_RATE = 0.25       # suggested set-aside when a payment lands
 _lock = threading.Lock()
 _last_refresh = datetime.min.replace(tzinfo=timezone.utc)
@@ -54,6 +54,11 @@ def stages_for(inv: dict) -> list[tuple[int, str, str]]:
     """The reminder ladder for this invoice: faster and more urgent for short deadlines."""
     term = (date.fromisoformat(inv["due_date"]) - date.fromisoformat(inv["created_at"][:10])).days
     return SHORT_STAGES if term <= SHORT_TERM_DAYS else STAGES
+
+
+def stage_on(inv: dict, overdue: int) -> tuple[int, str, str]:
+    """The tone and subject for a reminder sent this many days overdue."""
+    return [s for s in stages_for(inv) if overdue >= s[0]][-1]
 
 
 # ---------- paid detection ----------
@@ -127,11 +132,8 @@ TONE_GUIDE = {
     "firm": "clear and direct, still polite",
     "urgent": "urgent and direct: the deadline was short because the payment is needed now, "
               "ask for payment today, still polite, no threats",
-    "final": "serious final notice: say plainly this is the final reminder and ask for payment "
-             "now, no threats",
-    "follow-up": "persistent and factual after the final notice: state how many reminders have "
-                 "gone unanswered, ask for payment now or a reply about when it will be paid, "
-                 "no threats",
+    "final": "serious final notice: say plainly how long it has gone unpaid despite the "
+             "reminders, ask for payment now or a reply about when it will be paid, no threats",
 }
 
 
@@ -140,7 +142,7 @@ def write_reminder(inv: dict, tone: str, overdue: int, voice: list[str] | None =
     """A short note for the PayPal reminder. Falls back to a template without the AI.
 
     voice: sample messages to imitate; None uses the saved samples, [] means no style.
-    sent_before: reminders already sent (used by follow-ups after the final notice)."""
+    sent_before: reminders already sent, so each daily note can be firmer than the last."""
     who = inv["client_name"] or "there"
     amount = owed(inv)
     fallback = {
@@ -153,13 +155,12 @@ def write_reminder(inv: dict, tone: str, overdue: int, voice: list[str] | None =
         "urgent": f"Hi {who}, invoice #{inv['number']} for ${amount:,.2f} was due on "
                   f"{_day(inv['due_date'])} and is now overdue. This payment is needed urgently: "
                   "please pay it today from this email, or reply if something is holding it up.",
-        "final": f"Hi {who}, this is a final reminder that invoice #{inv['number']} for "
-                 f"${amount:,.2f} is {overdue} days overdue. Please pay it as soon as possible.",
-        "follow-up": f"Hi {who}, invoice #{inv['number']} for ${amount:,.2f} is still unpaid, "
-                     f"{overdue} days after it was due, and {sent_before} reminders have gone "
-                     "unanswered. Please pay it from this email today, or reply to let me know "
-                     "when it will be paid.",
+        "final": f"Hi {who}, this is a final notice: invoice #{inv['number']} for "
+                 f"${amount:,.2f} is {overdue} days overdue. Please pay it today from this email, "
+                 "or reply to let me know when it will be paid.",
     }[tone]
+    if sent_before > 1 and tone != "friendly":
+        fallback += f" ({sent_before} earlier reminders have gone unanswered.)"
     if not config.llm_configured():
         return fallback
     if voice is None:
@@ -171,9 +172,10 @@ def write_reminder(inv: dict, tone: str, overdue: int, voice: list[str] | None =
         else "Write in a warm, professional voice."
     partial = (f" (partly paid: ${amount:,.2f} of ${inv['amount']:,.2f} is still owed)"
                if amount < inv["amount"] else "")
-    final_on = f" on {_day(inv['final_day'])}" if inv.get("final_day") else ""
-    history = (f" {sent_before} earlier reminders, including a final notice{final_on}, got no "
-               "payment. Only mention dates given here." if tone == "follow-up" else "")
+    history = (f" This is reminder number {sent_before + 1}: {sent_before} earlier daily "
+               f"reminder{'s' if sent_before != 1 else ''} got no payment, so be firmer than the "
+               "last one and don't repeat it word for word. Only mention dates given here."
+               if sent_before else "")
     prompt = (
         f"Write the note for a PayPal invoice reminder from {config.INVOICER_NAME} to {who}.\n"
         f"Invoice #{inv['number']}, ${amount:,.2f} {inv['currency']} owed{partial}, due "
@@ -194,19 +196,13 @@ def write_reminder(inv: dict, tone: str, overdue: int, voice: list[str] | None =
         return fallback
 
 
-def followup_days() -> int:
-    return int(db.get_setting("followup_days", DEFAULT_FOLLOWUP_DAYS))
-
-
-def next_step(inv: dict) -> tuple[str, date] | None:
+def next_step(inv: dict) -> tuple[str, date]:
     """The next reminder this invoice will get: (tone, on which day)."""
     due = date.fromisoformat(inv["due_date"])
-    stages = stages_for(inv)
-    if inv["chase_stage"] < len(stages):
-        days, tone, _ = stages[inv["chase_stage"]]
-        return tone, due + timedelta(days=days)
-    last = date.fromisoformat(inv["last_reminder_day"]) if inv.get("last_reminder_day") else today()
-    return "follow-up", last + timedelta(days=followup_days())
+    on = max(due + timedelta(days=stages_for(inv)[0][0]), today())
+    if inv.get("last_reminder_day"):
+        on = max(on, date.fromisoformat(inv["last_reminder_day"]) + timedelta(days=1))
+    return stage_on(inv, (on - due).days)[1], on
 
 
 def chase_due() -> list[str]:
@@ -221,41 +217,27 @@ def chase_due() -> list[str]:
         if inv["client_email"].lower() in skip or (inv["client_name"] or "").lower() in skip_names:
             continue
         overdue = days_overdue(inv)
-        stages = stages_for(inv)
-        if overdue < stages[0][0]:
+        if overdue < stages_for(inv)[0][0]:
             continue
+        # One reminder a day, in today's tone. Days that were missed (the app was asleep, or
+        # the demo clock jumped) are skipped, never sent back to back
+        if inv.get("last_reminder_day") and date.fromisoformat(inv["last_reminder_day"]) >= now_day:
+            continue
+        _, tone, subject = stage_on(inv, overdue)
         stage = inv["chase_stage"]
-        if stage < len(stages):
-            # The reminder that fits today; earlier ones that were missed (the app was asleep,
-            # or the demo clock jumped) are skipped, never sent back to back
-            target = sum(1 for threshold, _, _ in stages if overdue >= threshold)
-            if target <= stage:
-                continue
-            _, tone, subject = stages[target - 1]
-        else:
-            # After the final notice: keep following up every few days until it's paid
-            tone, on = next_step(inv)
-            if now_day < on:
-                continue
-            target = stage + 1
-            subject = f"Still unpaid: invoice #{{number}} ({target - len(stages)} after final notice)"
-        # Never two reminders on the same real day, except when the demo clock is moving
-        if inv["last_reminder_at"] and inv["last_reminder_at"][:10] == db.now()[:10] \
-                and not demo_offset_days():
-            continue
         note = write_reminder(inv, tone, overdue, sent_before=stage)
         try:
-            pp_invoices.remind(inv["id"], note, subject.format(number=inv["number"]))
+            pp_invoices.remind(inv["id"], note, subject.format(number=inv["number"], days=overdue))
         except PayPalError as e:
             print(f"[chasing] remind #{inv['number']}: {e}")
             continue
-        fields = {"chase_stage": target, "last_reminder_at": db.now(),
+        fields = {"chase_stage": stage + 1, "last_reminder_at": db.now(),
                   "last_reminder_day": now_day.isoformat()}
-        if target == len(stages):
+        if tone == "final" and not inv.get("final_day"):
             fields["final_day"] = now_day.isoformat()
         db.update_invoice(inv["id"], **fields)
         who = inv["client_name"] or inv["client_email"]
-        db.save_event({"event_type": f"UPSTREAM.CHASE.{tone.upper().replace('-', '_')}",
+        db.save_event({"event_type": f"UPSTREAM.CHASE.{tone.upper()}",
                        "resource": {"id": inv["id"]}, "note": note},
                       message=f"Sent a {tone} reminder to {who} for #{inv['number']} "
                               f"(${owed(inv):,.2f}, {overdue} day{'s' if overdue != 1 else ''} "

@@ -219,7 +219,6 @@ async function loadInvoices() {
 
     gpState = st;
     $("chase-toggle").checked = !st.chasing_paused;
-    if (document.activeElement !== $("followup-days")) $("followup-days").value = st.followup_days;
     show($("demo-clock"), st.sandbox);
     $("clock-text").textContent = st.demo_offset_days
       ? `pretending today is ${fmtDay(st.today)} (+${st.demo_offset_days} day${st.demo_offset_days === 1 ? "" : "s"})`
@@ -273,14 +272,6 @@ $("inv-list").addEventListener("click", async (e) => {
     d.error = err.message;
   }
   document.activeElement?.blur?.();
-  loadInvoices();
-});
-
-$("followup-days").addEventListener("change", async (e) => {
-  const days = Math.min(30, Math.max(3, Number(e.target.value) || 7));
-  e.target.value = days;
-  await api("/api/getpaid/followup", { method: "PUT", body: JSON.stringify({ days }) }).catch(() => {});
-  e.target.blur();
   loadInvoices();
 });
 

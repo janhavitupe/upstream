@@ -148,23 +148,11 @@ def write_off(invoice_id: str):
     return _invoice_view(db.get_invoice(invoice_id))
 
 
-class FollowupIn(BaseModel):
-    days: int = Field(..., ge=3, le=30)
-
-
-@router.put("/followup")
-def set_followup(body: FollowupIn):
-    """How often to keep following up after the final notice, until paid."""
-    db.set_setting("followup_days", body.days)
-    return state()
-
-
 @router.get("/state")
 def state():
     """Switches, the demo clock and the chasing / payment log for the Get paid tab."""
     log = db.list_events(20, prefixes=("UPSTREAM.CHASE.", "UPSTREAM.INVOICE.", "UPSTREAM.RETAINER."))
     return {"chasing_paused": bool(db.get_setting("chasing_paused", False)),
-            "followup_days": chasing.followup_days(),
             "sandbox": "sandbox" in config.PAYPAL_BASE,
             "demo_offset_days": chasing.demo_offset_days(),
             "today": chasing.today().isoformat(),

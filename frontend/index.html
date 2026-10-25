@@ -55,10 +55,8 @@
           </div>
           <label class="check small switch-row">
             <input type="checkbox" id="chase-toggle" checked>
-            <span>Chase overdue invoices automatically (friendly → firm → final; urgent → final when the deadline was a week or less)</span>
+            <span>Chase overdue invoices automatically: a reminder every day until paid, friendly for the first week, then firm, urgent, final (urgent from day 1 when the deadline was a week or less)</span>
           </label>
-          <label class="small followup-row">After the final notice, keep following up every
-            <input type="number" id="followup-days" min="3" max="30" value="7"> days until paid.</label>
           <ul class="list" id="inv-list"><li class="muted">No invoices yet.</li></ul>
           <div class="demo-clock" id="demo-clock" hidden>
             <div><b>Demo clock</b> <span class="muted small" id="clock-text"></span></div>

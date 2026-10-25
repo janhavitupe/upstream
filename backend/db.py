@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     paid_at           TEXT,
     chase_stage       INTEGER NOT NULL DEFAULT 0,  -- reminders sent so far
     last_reminder_at  TEXT,
-    last_reminder_day TEXT,               -- by the (demo) clock, for follow-up spacing
+    last_reminder_day TEXT,               -- by the (demo) clock: one reminder a day
     final_day         TEXT,               -- when the final notice went out
     needs_you_at      TEXT,               -- when it was handed to the owner
     viewed            INTEGER,            -- PayPal: has the client opened it

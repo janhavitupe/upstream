@@ -156,8 +156,6 @@ def test_state_switches_and_demo_clock(client, fake_paypal, monkeypatch):
     from backend import config
     monkeypatch.setattr(config, "PAYPAL_BASE", "https://api-m.paypal.com")
     assert client.post("/api/getpaid/demo-clock", json={"days": 1}).status_code == 400
-    assert client.put("/api/getpaid/followup", json={"days": 2}).status_code == 422
-    assert client.put("/api/getpaid/followup", json={"days": 10}).json()["followup_days"] == 10
 
 
 def test_check_detects_payments_partial_payments_and_opens(client, fake_paypal):
@@ -191,8 +189,8 @@ def test_invoice_webhooks(client, fake_paypal):
 
 def _overdue_needing_you(fake_paypal, demo_day):
     inv = _bill(fake_paypal, due=_soon(0))
-    demo_day(14); chasing.chase_due()
-    demo_day(21); chasing.chase_due()
+    demo_day(22); chasing.chase_due()
+    demo_day(29); chasing.chase_due()
     return inv
 
 
@@ -206,7 +204,7 @@ def test_needs_you_view_trail_and_draft(client, fake_paypal, fake_llm, demo_day)
     fake_llm.responder = responder
     inv = _overdue_needing_you(fake_paypal, demo_day)
     row = client.get("/api/getpaid/invoices").json()[0]
-    assert row["needs_you"] and row["chase_stage"] == 4
+    assert row["needs_you"] and row["chase_stage"] == 2
     trail = client.get(f"/api/getpaid/invoices/{inv['id']}/trail").json()
     types = [e["type"] for e in trail["events"]]
     assert "UPSTREAM.CHASE.FINAL" in types and "UPSTREAM.INVOICE.NEEDS_YOU" in types

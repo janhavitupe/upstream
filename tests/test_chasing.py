@@ -35,29 +35,36 @@ def test_not_overdue_means_no_reminder(reminders):
     assert chasing.chase_due() == [] and not reminders
 
 
-def test_friendly_then_firm_then_final_then_weekly_follow_ups(reminders):
+def test_a_reminder_every_day_friendly_for_a_week_then_escalating(reminders):
     _invoice(due_in=0)
-    _clock(1); chasing.chase_due()
-    _clock(2); chasing.chase_due()                       # same stage: nothing new
+    for day in range(1, 31):
+        _clock(day); chasing.chase_due(); chasing.chase_due()   # twice a day: still one
+    tones = [s.split(":")[0] for _, s, _ in reminders]
+    assert len(tones) == 30
+    assert tones[:7] == ["Friendly reminder"] * 7
+    assert tones[7:14] == ["Reminder"] * 7 and tones[14:21] == ["Urgent"] * 7
+    assert tones[21:] == ["Final notice"] * 9
+    assert reminders[-1][1] == "Final notice: invoice #I1 is 30 days overdue"
+    assert "29 earlier reminders" in reminders[-1][2]
+    inv = db.get_invoice("I1")
+    assert inv["chase_stage"] == 30
+    assert inv["final_day"] == (date.today() + timedelta(days=22)).isoformat()
+
+
+def test_next_reminder_is_tomorrow_once_today_is_sent(reminders):
+    _invoice(due_in=0)
+    assert chasing.next_step(db.get_invoice("I1")) == ("friendly", date.today() + timedelta(days=1))
     _clock(7); chasing.chase_due()
-    _clock(14); chasing.chase_due()
-    _clock(18); chasing.chase_due()                      # too soon after the final
-    _clock(21); chasing.chase_due()
-    subjects = [s for _, s, _ in reminders]
-    assert [s.split(":")[0] for s in subjects] == ["Friendly reminder", "Second reminder",
-                                                     "Final notice", "Still unpaid"]
-    assert db.get_invoice("I1")["chase_stage"] == 4
+    assert chasing.next_step(db.get_invoice("I1")) == ("firm", date.today() + timedelta(days=8))
 
 
-def test_short_deadlines_get_an_urgent_reminder_then_the_final_sooner(reminders):
+def test_short_deadlines_are_urgent_from_day_one_then_final(reminders):
     _invoice(due_in=0, term=2)                           # "due in 2 days"
     assert chasing.next_step(db.get_invoice("I1"))[0] == "urgent"
-    _clock(1); chasing.chase_due()
-    _clock(2); chasing.chase_due()                       # same stage: nothing new
-    _clock(3); chasing.chase_due()
-    _clock(10); chasing.chase_due()
+    for day in range(1, 5):
+        _clock(day); chasing.chase_due()
     subjects = [s.split(":")[0] for _, s, _ in reminders]
-    assert subjects == ["Urgent", "Final notice", "Still unpaid"]
+    assert subjects == ["Urgent", "Urgent", "Final notice", "Final notice"]
     assert "needed urgently" in reminders[0][2]
     assert db.get_invoice("I1")["final_day"] == (date.today() + timedelta(days=3)).isoformat()
 
@@ -69,9 +76,9 @@ def test_a_week_is_still_short_but_eight_days_is_not():
     assert chasing.stages_for(db.get_invoice("I2")) == chasing.STAGES
 
 
-def test_missed_stages_are_skipped_not_sent_back_to_back(reminders):
+def test_missed_days_are_skipped_not_sent_back_to_back(reminders):
     _invoice(due_in=0)
-    _clock(20); chasing.chase_due()
+    _clock(23); chasing.chase_due(); chasing.chase_due()
     assert len(reminders) == 1 and reminders[0][1].startswith("Final notice")
 
 
@@ -88,9 +95,9 @@ def test_pause_and_dont_chase_are_respected(reminders):
 
 def test_needs_you_a_week_after_the_final_notice(reminders):
     _invoice(due_in=0)
-    _clock(14); chasing.chase_due()
+    _clock(22); chasing.chase_due()
     assert not db.get_invoice("I1")["needs_you_at"]
-    _clock(21); chasing.chase_due()
+    _clock(29); chasing.chase_due()
     assert db.get_invoice("I1")["needs_you_at"]
 
 
