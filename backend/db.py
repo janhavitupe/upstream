@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from backend import config
 
 SCHEMA = """
--- From the removed dependency-funding module; kept because payout_batches refers to it
+-- From the removed dependency-funding module, kept because payout_batches refers to it
 CREATE TABLE IF NOT EXISTS analyses (
     id          TEXT PRIMARY KEY,
     repo        TEXT NOT NULL,

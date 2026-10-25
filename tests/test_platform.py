@@ -141,3 +141,11 @@ def test_basic_invoice_routes(client, fake_paypal):
 def test_frontend_javascript_has_no_syntax_errors(script):
     r = subprocess.run(["node", "--check", str(ROOT / "frontend" / script)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_schema_splits_into_whole_statements_for_postgres():
+    # PostgreSQL runs the schema one statement at a time, split on ";" (SQLite doesn't split,
+    # so a ";" inside a comment only breaks Postgres, e.g. a Render deploy on Neon)
+    for chunk in db.SCHEMA.split(";"):
+        code = " ".join(line.partition("--")[0] for line in chunk.splitlines()).strip()
+        assert not code or code.upper().startswith(("CREATE ", "ALTER ")), code[:80]
