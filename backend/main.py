@@ -48,6 +48,16 @@ FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
 
+@app.middleware("http")
+async def always_fresh_frontend(request, call_next):
+    """Browsers must re-check the page and its scripts on every load (a cheap 304 when nothing
+    changed), so after a deploy nobody runs an old script against the new page."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(PayPalError)
 async def paypal_error_handler(_, e: PayPalError):
     status = e.status if 400 <= e.status < 600 else 500

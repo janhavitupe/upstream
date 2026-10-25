@@ -149,3 +149,8 @@ def test_schema_splits_into_whole_statements_for_postgres():
     for chunk in db.SCHEMA.split(";"):
         code = " ".join(line.partition("--")[0] for line in chunk.splitlines()).strip()
         assert not code or code.upper().startswith(("CREATE ", "ALTER ")), code[:80]
+
+
+def test_page_and_scripts_are_never_served_stale(client):
+    for path in ("/", "/static/team.js"):
+        assert client.get(path).headers["cache-control"] == "no-cache"
