@@ -22,6 +22,7 @@ class FakePayPal:
         self.subs: dict[str, dict] = {}
         self.orders: dict[str, dict] = {}
         self.reminders: list[tuple[str, dict]] = []
+        self.updates: list[tuple[str, dict]] = []     # (invoice id, query params) per PUT
         self.unclaimed_emails: set[str] = set()   # payouts to these stay UNCLAIMED
         self.fail_next: dict[str, PayPalError] = {}  # path substring -> error to raise once
         self._ids = itertools.count(1)
@@ -96,8 +97,11 @@ class FakePayPal:
         self.invoices[inv_id]["status"] = "SENT"
         return {}
 
-    def _update_invoice(self, inv_id, body, **_):
-        self.invoices[inv_id]["configuration"] = body.get("configuration", {})
+    def _update_invoice(self, inv_id, body, params, **_):
+        inv = self.invoices[inv_id]
+        inv["configuration"] = body.get("configuration", {})
+        inv["detail"].update(body.get("detail", {}))
+        self.updates.append((inv_id, params))
         return self._inv(inv_id)
 
     def _remind(self, inv_id, body, **_):

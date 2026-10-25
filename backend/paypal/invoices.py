@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from backend import config
 
-from .client import paypal
+from .client import PayPalError, paypal
 
 OPEN_STATUSES = ("SENT", "UNPAID", "PARTIALLY_PAID")
 
@@ -71,7 +71,29 @@ def create_and_send(recipient_email: str, items: list[dict], **kwargs) -> dict:
     return get(inv_id)
 
 
+def update(invoice_id: str, *, detail: dict | None = None, configuration: dict | None = None,
+           notify: bool = False) -> dict:
+    """Change an invoice. PayPal wants the whole invoice back, so start from the current one.
+    notify: PayPal re-sends the updated invoice to the client."""
+    remote = get(invoice_id)
+    body = {k: remote[k] for k in ("detail", "invoicer", "primary_recipients", "items",
+                                   "configuration") if k in remote}
+    body["detail"] = {k: v for k, v in body["detail"].items() if k != "metadata"}
+    body["detail"].update(detail or {})
+    if configuration:
+        body["configuration"] = {**body.get("configuration", {}), **configuration}
+    flag = "true" if notify else "false"
+    return paypal.request("PUT", f"/v2/invoicing/invoices/{invoice_id}", json=body,
+                          params={"send_to_recipient": flag, "send_to_invoicer": "false"})
+
+
 def remind(invoice_id: str, note: str, subject: str | None = None) -> dict:
+    # The reminder email shows the invoice itself, so the note goes on the invoice too: it is
+    # then visible in the email (and the sandbox's notification copy) and on the pay page
+    try:
+        update(invoice_id, detail={"note": note[:4000]})
+    except PayPalError as e:
+        print(f"[invoices] note not added to {invoice_id}: {e}")
     body = {
         "subject": subject or "Friendly reminder about your invoice",
         "note": note[:4000],

@@ -112,15 +112,9 @@ def allow_partial(invoice_id: str, body: PartialIn):
     inv = _open_invoice(invoice_id)
     if body.minimum >= chasing.owed(inv):
         raise HTTPException(400, "The minimum must be less than what's owed.")
-    remote = pp_invoices.get(invoice_id)
-    update = {k: remote[k] for k in ("detail", "invoicer", "primary_recipients", "items",
-                                     "configuration") if k in remote}
-    update["detail"] = {k: v for k, v in update["detail"].items() if k != "metadata"}
-    update["configuration"] = {**update.get("configuration", {}), "partial_payment": {
+    pp_invoices.update(invoice_id, notify=True, configuration={"partial_payment": {
         "allow_partial_payment": True,
-        "minimum_amount_due": {"currency_code": inv["currency"], "value": f"{body.minimum:.2f}"}}}
-    pp_invoices.paypal.request("PUT", f"/v2/invoicing/invoices/{invoice_id}", json=update,
-                               params={"send_to_recipient": "true"})
+        "minimum_amount_due": {"currency_code": inv["currency"], "value": f"{body.minimum:.2f}"}}})
     db.update_invoice(invoice_id, partial_allowed=1)
     db.save_event({"event_type": "UPSTREAM.INVOICE.PARTIAL_ALLOWED",
                    "resource": {"id": invoice_id}},

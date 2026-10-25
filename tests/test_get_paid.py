@@ -5,6 +5,7 @@ import pytest
 
 from backend import chasing, db
 from backend.agent import billing
+from backend.paypal.client import PayPalError
 
 
 def _soon(days=14):
@@ -255,6 +256,16 @@ def test_reminders_use_the_ai_note_and_fall_back_when_it_is_bad(fake_paypal, fak
     demo_day(8); chasing.chase_due()
     assert "$300.00" in fake_paypal.reminders[-1][1]["note"]
     assert db.get_invoice(inv["id"])["chase_stage"] == 2
+    # the note is also on the invoice, so it shows in the reminder email; not re-sent for it
+    assert fake_paypal.invoices[inv["id"]]["detail"]["note"] == fake_paypal.reminders[-1][1]["note"]
+    assert fake_paypal.updates[-1][1]["send_to_recipient"] == "false"
+
+
+def test_reminder_still_goes_out_if_the_note_cannot_be_added(fake_paypal, demo_day):
+    inv = _bill(fake_paypal, due=_soon(0))
+    fake_paypal.fail_next[f"/v2/invoicing/invoices/{inv['id']}"] = PayPalError(500, {"name": "INTERNAL"})
+    demo_day(1); chasing.chase_due()
+    assert len(fake_paypal.reminders) == 1
 
 
 # ---------- payment landed ----------
