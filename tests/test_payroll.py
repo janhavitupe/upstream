@@ -131,3 +131,19 @@ def test_schedule_api_validates_timing(client, fake_split):
                                                      "tz": IST, "notice_hours": 1})
     assert ok.status_code == 200 and ok.json()["frequency"] == "daily"
     assert ok.json()["notice_minutes"] == 60 and ok.json()["tz"] == IST
+
+
+def test_approving_inside_the_heads_up_pays_at_the_chosen_time(fake_split, paid):
+    # Set up at 10:15 PM for 10:20 PM with a 1-hour heads-up: the owner just approved this
+    # split, so it pays at 10:20 PM (5 minutes to change their mind), not at 11:15 PM
+    s = _schedule(0, created="2026-10-25T16:45:00+00:00", frequency="daily", pay_time="22:20",
+                  tz=IST, notice_minutes=60)
+    now = datetime(2026, 10, 25, 16, 45, tzinfo=timezone.utc)          # 10:15 PM IST
+    payroll.tick(now, pay=False, just_approved=s["id"])
+    run = db.runs_for_schedule(s["id"])[0]
+    assert run["pay_after"] == "2026-10-25T16:50:00+00:00"              # 10:20 PM IST
+    # A heads-up made late by the timer (nobody has seen it) still lasts the full hour
+    s2 = _schedule(0, created="2026-10-25T16:45:00+00:00", frequency="daily", pay_time="22:20",
+                   tz=IST, notice_minutes=60)
+    payroll.tick(now, pay=False)
+    assert db.runs_for_schedule(s2["id"])[0]["pay_after"] == "2026-10-25T17:45:00+00:00"

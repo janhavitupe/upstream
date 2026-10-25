@@ -192,3 +192,18 @@ def test_skip_pause_resume_and_tick(client, frozen_split, fake_paypal):
     assert client.post("/api/payroll/tick").json() == {"actions": []}
     assert not fake_paypal.batches
     assert client.post("/api/payroll/schedules/nope/pause").status_code == 404
+
+
+def test_delete_schedule_removes_it_and_its_history(client, frozen_split, fake_paypal):
+    s = _create(client).json()
+    assert s["current_run"]
+    assert client.delete(f"/api/payroll/schedules/{s['id']}").json() == {"deleted": s["id"]}
+    assert client.get("/api/payroll/schedules").json() == []
+    assert not db.runs_for_schedule(s["id"])
+    assert client.delete(f"/api/payroll/schedules/{s['id']}").status_code == 404
+
+
+def test_delete_is_refused_while_paying(client, frozen_split, fake_paypal):
+    s = _create(client).json()
+    db.update_run(s["current_run"]["id"], status="paying")
+    assert client.delete(f"/api/payroll/schedules/{s['id']}").status_code == 409

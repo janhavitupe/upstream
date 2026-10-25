@@ -206,13 +206,17 @@ def next_payday(schedule: dict, now: datetime) -> datetime:
     return paydays(schedule, now, count=4)[-1][1]
 
 
-def make_preview(schedule: dict, period: str, payday: datetime, now: datetime) -> dict | None:
+def make_preview(schedule: dict, period: str, payday: datetime, now: datetime,
+                 just_approved: bool = False) -> dict | None:
+    """The heads-up for one payday. It normally lasts the full notice even if it's made late
+    (the owner hasn't seen this split yet); right after the owner approved the schedule they
+    have just seen it, so it pays at the chosen time, keeping a few minutes to change their mind."""
     since = (_parse(schedule["last_window_end"]) if schedule.get("last_window_end")
              else now - timedelta(days=30))
     split = compute_split(schedule["repo"], schedule["owner_login"], schedule["total"],
                           schedule["top_n"], since, now, schedule["emails"])
-    pay_after = max(payday, now + notice(schedule),
-                    now + timedelta(minutes=config.PAYROLL_MIN_EDIT_MINUTES))
+    pay_after = max(payday, now + timedelta(minutes=config.PAYROLL_MIN_EDIT_MINUTES),
+                    now if just_approved else now + notice(schedule))
     run = {"id": uuid.uuid4().hex[:12], "schedule_id": schedule["id"], "period": period,
            "status": "preview", "pay_after": _iso(pay_after), "window_start": split["window_start"],
            "window_end": split["window_end"], "result": split}
@@ -285,7 +289,8 @@ def skip_run(run_id: str) -> dict:
     return db.get_run(run_id)
 
 
-def tick(now: datetime | None = None, pay: bool = True) -> list[str]:
+def tick(now: datetime | None = None, pay: bool = True,
+         just_approved: str | None = None) -> list[str]:
     """Make due previews and pay due runs. Safe to call often and from several places.
 
     pay=False only makes previews, so a newly created schedule is never paid in the same
@@ -301,7 +306,8 @@ def tick(now: datetime | None = None, pay: bool = True) -> list[str]:
                 run = db.run_for_period(s["id"], period)
                 try:
                     if not run and now >= payday - notice(s):
-                        run = make_preview(s, period, payday, now)
+                        run = make_preview(s, period, payday, now,
+                                           just_approved=s["id"] == just_approved)
                         if run:
                             actions.append(f"preview {s['repo']} {period}")
                     if pay and run and run["status"] == "preview" and now >= _parse(run["pay_after"]):

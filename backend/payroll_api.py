@@ -87,7 +87,7 @@ def create_schedule(body: ScheduleIn):
                               "notice_minutes": minutes,
                               "owner_login": body.owner_login.lstrip("@")})
     # Make this month's preview now if the heads-up has started; never pay in this call
-    payroll.tick(pay=False)
+    payroll.tick(pay=False, just_approved=sid)
     return _schedule_view(db.get_schedule(sid))
 
 
@@ -108,6 +108,15 @@ def pause(sid: str):
     _get_schedule(sid)
     db.update_schedule(sid, active=False)
     return _schedule_view(db.get_schedule(sid))
+
+
+@router.delete("/schedules/{sid}")
+def delete(sid: str):
+    """Delete a schedule and its history (money already paid stays paid in PayPal)."""
+    _get_schedule(sid)
+    if not db.delete_schedule(sid):
+        raise HTTPException(409, "A payment is going out right now. Try again in a minute.")
+    return {"deleted": sid}
 
 
 @router.post("/schedules/{sid}/resume")

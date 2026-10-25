@@ -414,6 +414,17 @@ def run_for_period(sid: str, period: str) -> dict | None:
     return _run(row) if row else None
 
 
+def delete_schedule(sid: str) -> bool:
+    """Remove a schedule and its history. Refused while a payment is going out."""
+    with connect() as c:
+        if c.execute("SELECT 1 FROM payroll_runs WHERE schedule_id = ? AND status = 'paying'",
+                     (sid,)).fetchone():
+            return False
+        c.execute("DELETE FROM payroll_runs WHERE schedule_id = ?", (sid,))
+        c.execute("DELETE FROM payroll_schedules WHERE id = ?", (sid,))
+    return True
+
+
 def runs_for_schedule(sid: str) -> list[dict]:
     with connect() as c:
         rows = c.execute("SELECT * FROM payroll_runs WHERE schedule_id = ? ORDER BY period DESC",

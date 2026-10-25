@@ -245,7 +245,7 @@ function scheduleHtml(s) {
         ${run.status === "preview" ? `
         <div class="btn-row">
           <button class="btn" data-act="save" ${dirty ? "" : "disabled"}>Save changes</button>
-          <button class="btn ghost" data-act="skip">Skip this month</button>
+          <button class="btn ghost" data-act="skip">Skip this payday</button>
           <label class="check small"><input type="checkbox" data-act="paynow-ok" ${dirty ? "disabled" : ""}>
             <span>Pay ${money(total)} now instead of waiting (optional)</span></label>
           <button class="btn primary" data-act="paynow" disabled>Pay now</button>
@@ -266,6 +266,7 @@ function scheduleHtml(s) {
           <span class="status ${s.active ? "SUCCESS" : "PENDING"}">${s.active ? "Active" : "Paused"}</span>
           <span class="muted small">Next payday ${fmtWhen(s.next_payday)}</span>
           <button class="btn ghost" data-act="${s.active ? "pause" : "resume"}">${s.active ? "Pause" : "Resume"}</button>
+          <button class="btn ghost danger" data-act="delete">Delete</button>
         </div>
       </div>
       ${runHtml}
@@ -302,7 +303,11 @@ $("t-schedules").addEventListener("click", async (e) => {
   const runId = box?.dataset.run;
   btn.disabled = true;
   try {
-    if (btn.dataset.act === "pause" || btn.dataset.act === "resume") {
+    if (btn.dataset.act === "delete") {
+      if (confirm("Delete this schedule and its history? Payments already made stay paid.")) {
+        await api(`/api/payroll/schedules/${sid}`, { method: "DELETE" });
+      }
+    } else if (btn.dataset.act === "pause" || btn.dataset.act === "resume") {
       await api(`/api/payroll/schedules/${sid}/${btn.dataset.act}`, { method: "POST" });
     } else if (btn.dataset.act === "save") {
       await api(`/api/payroll/runs/${runId}/amounts`, {
