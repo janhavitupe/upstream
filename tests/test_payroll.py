@@ -147,3 +147,31 @@ def test_approving_inside_the_heads_up_pays_at_the_chosen_time(fake_split, paid)
                    tz=IST, notice_minutes=60)
     payroll.tick(now, pay=False)
     assert db.runs_for_schedule(s2["id"])[0]["pay_after"] == "2026-10-25T17:45:00+00:00"
+
+
+def test_heads_up_that_runs_past_midnight_still_pays(fake_split, paid):
+    # Daily at 11:15 PM IST, 1-hour heads-up, but the sleeping app first woke at 11:55 PM: the
+    # heads-up lasts until 12:55 AM, which is the next day. It must still pay, not hang forever
+    s = _schedule(0, created="2026-10-27T10:00:00+00:00", frequency="daily", pay_time="23:15",
+                  tz=IST, notice_minutes=60)
+    at = lambda d, h, m=0: datetime(2026, 10, d, h, m, tzinfo=timezone.utc)  # noqa: E731
+    assert payroll.tick(at(27, 18, 25)) == ["preview o/r 2026-10-27"]   # 11:55 PM IST
+    # Days later it's paid, and the payday slept through since then is caught up
+    assert payroll.tick(at(29, 18, 40)) == ["paid o/r 2026-10-27", "preview o/r 2026-10-29"]
+    assert [(r["period"], r["status"]) for r in db.runs_for_schedule(s["id"])] == [
+        ("2026-10-29", "preview"), ("2026-10-27", "paid")]
+
+
+def test_payday_slept_through_is_caught_up_once(fake_split, paid):
+    # The app slept through Oct 28's payday and woke after midnight: that payday is made late
+    # (with the full heads-up) and pays all the work since the last run, once
+    s = _schedule(0, created="2026-10-25T17:00:00+00:00", frequency="daily", pay_time="23:15",
+                  tz=IST, notice_minutes=60)
+    at = lambda d, h, m=0: datetime(2026, 10, d, h, m, tzinfo=timezone.utc)  # noqa: E731
+    assert payroll.tick(at(28, 19, 30)) == ["preview o/r 2026-10-28"]   # 1:00 AM IST on the 29th
+    assert payroll.tick(at(28, 20, 0)) == [] and not paid               # heads-up still running
+    assert payroll.tick(at(28, 20, 30)) == ["paid o/r 2026-10-28"]
+    assert payroll.tick(at(29, 17, 0)) == ["preview o/r 2026-10-29"]    # back on schedule
+    assert payroll.tick(at(29, 18, 0)) == ["paid o/r 2026-10-29"] and len(paid) == 2
+    runs = {r["period"]: r for r in db.runs_for_schedule(s["id"])}
+    assert runs["2026-10-29"]["window_start"] == runs["2026-10-28"]["window_end"]  # no overlap

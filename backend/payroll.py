@@ -180,15 +180,28 @@ def _next_period_day(schedule: dict, day: date) -> date:
     return (day.replace(day=1) + timedelta(days=32)).replace(day=1)
 
 
-def paydays(schedule: dict, now: datetime, count: int = 2) -> list[tuple[str, datetime]]:
-    """This period's payday and the next ones, as (period key, payday in UTC). Paydays from
-    before the day the schedule was created are left out: it never pays for the past. (Set up
-    on payday after the time has passed, it pays that day, once the heads-up has run.)"""
+def _prev_period_day(schedule: dict, day: date) -> date:
+    freq = schedule.get("frequency") or "monthly"
+    if freq == "daily":
+        return day - timedelta(days=1)
+    if freq == "weekly":
+        return day - timedelta(days=7)
+    return (day.replace(day=1) - timedelta(days=1)).replace(day=1)
+
+
+def paydays(schedule: dict, now: datetime, count: int = 2,
+            back: int = 0) -> list[tuple[str, datetime]]:
+    """This period's payday and the next ones, as (period key, payday in UTC); back=1 starts a
+    period earlier. Paydays from before the day the schedule was created are left out: it
+    never pays for the past. (Set up on payday after the time has passed, it pays that day,
+    once the heads-up has run.)"""
     tz = zone(schedule.get("tz"))
     hh, mm = (int(x) for x in (schedule.get("pay_time") or "00:00").split(":"))
     created_day = _parse(schedule["created_at"]).astimezone(tz).date()
     out, day = [], now.astimezone(tz).date()
-    for _ in range(count):
+    for _ in range(back):
+        day = _prev_period_day(schedule, day)
+    for _ in range(count + back):
         period, payday = _payday_in(schedule, day)
         if payday >= created_day:
             out.append((period, datetime.combine(payday, time(hh, mm), tzinfo=tz)
@@ -300,9 +313,18 @@ def tick(now: datetime | None = None, pay: bool = True,
     actions = []
     with _tick_lock:
         for s in db.list_schedules(active_only=True):
-            # This period's payday and the next one: a heads-up can start before the period
-            # does (e.g. on the 30th for a payday on the 1st)
-            for period, payday in paydays(s, now):
+            # Last period's payday (caught up if the app slept through it), this period's and
+            # the next one: a heads-up can start before the period does (e.g. on the 30th for
+            # a payday on the 1st)
+            targets = paydays(s, now, back=1)
+            # A run still open from an older payday (e.g. a heads-up that ran past midnight)
+            # is finished first
+            stale = next((r for r in db.runs_for_schedule(s["id"])
+                          if r["status"] in ("preview", "paying")
+                          and r["period"] not in {p for p, _ in targets}), None)
+            if stale:
+                targets.insert(0, (stale["period"], None))
+            for period, payday in targets:
                 run = db.run_for_period(s["id"], period)
                 try:
                     if not run and now >= payday - notice(s):
