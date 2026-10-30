@@ -24,10 +24,12 @@ MESSAGES = {
 
 
 def _apply_invoice_event(etype: str, resource: dict):
-    if not resource.get("id") or not db.get_invoice(resource["id"]):
+    resource = resource.get("invoice") or resource  # PayPal nests it: {"invoice": {...}}
+    inv = db.get_invoice(resource["id"]) if resource.get("id") else None
+    if not inv:
         return  # not an invoice Upstream sent
-    if etype == "INVOICING.INVOICE.PAID":
-        chasing.mark_paid(resource["id"], resource.get("status") or "PAID")
+    if etype == "INVOICING.INVOICE.PAID":  # also sent for part payments: follow its status
+        chasing.apply_remote(inv, resource)
     elif etype == "INVOICING.INVOICE.CANCELLED":
         db.update_invoice(resource["id"], status="CANCELLED")
 

@@ -177,13 +177,24 @@ def test_check_detects_payments_partial_payments_and_opens(client, fake_paypal):
 def test_invoice_webhooks(client, fake_paypal):
     a = _bill(fake_paypal)
     b = _bill(fake_paypal)
+    # PayPal's real payload nests the invoice under resource.invoice
     client.post("/webhooks/paypal", json={"event_type": "INVOICING.INVOICE.PAID",
-                                          "resource": {"id": a["id"], "status": "PAID"}})
+                                          "resource": {"invoice": {"id": a["id"], "status": "PAID"}}})
     client.post("/webhooks/paypal", json={"event_type": "INVOICING.INVOICE.CANCELLED",
-                                          "resource": {"id": b["id"]}})
+                                          "resource": {"invoice": {"id": b["id"]}}})
     client.post("/webhooks/paypal", json={"event_type": "INVOICING.INVOICE.PAID",
-                                          "resource": {"id": "not-ours"}})
+                                          "resource": {"invoice": {"id": "not-ours"}}})
     assert db.get_invoice(a["id"])["status"] == "PAID" and db.get_invoice(b["id"])["status"] == "CANCELLED"
+
+
+def test_part_payment_webhook_keeps_chasing_what_is_left(client, fake_paypal):
+    inv = _bill(fake_paypal)
+    client.post("/webhooks/paypal", json={
+        "event_type": "INVOICING.INVOICE.PAID",
+        "resource": {"invoice": {"id": inv["id"], "status": "PARTIALLY_PAID",
+                                 "due_amount": {"value": "200.00"}}}})
+    row = db.get_invoice(inv["id"])
+    assert row["status"] == "PARTIALLY_PAID" and row["amount_due"] == 200 and not row["paid_at"]
 
 
 # ---------- needs you ----------

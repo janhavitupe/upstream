@@ -93,28 +93,35 @@ def refresh_open(force: bool = False) -> list[str]:
         except PayPalError as e:
             print(f"[chasing] refresh {inv['number']}: {e}")
             continue
-        status = remote.get("status")
-        if status in PAID:
-            if mark_paid(inv["id"], status):
-                changes.append(f"paid #{inv['number']}")
-            continue
-        fields = {"viewed": int(bool((remote.get("detail") or {}).get("viewed_by_recipient")))}
-        due = (remote.get("due_amount") or {}).get("value")
-        if due is not None:
-            fields["amount_due"] = float(due)
-            paid_now = round(owed(inv) - float(due), 2)
-            if paid_now > 0:  # a partial payment landed since the last check
-                who = inv["client_name"] or inv["client_email"]
-                db.save_event({"event_type": "UPSTREAM.INVOICE.PARTIAL_PAYMENT",
-                               "resource": {"id": inv["id"]}, "amount": paid_now},
-                              message=f"Payment landed: {who} paid ${paid_now:,.2f} of "
-                                      f"#{inv['number']}; ${float(due):,.2f} is still owed and "
-                                      "will keep being chased.", verified=None)
-                changes.append(f"partial payment #{inv['number']}")
-        if status and status != inv["status"]:
-            fields["status"] = status
-            changes.append(f"#{inv['number']} {status.lower()}")
-        db.update_invoice(inv["id"], **fields)
+        changes += apply_remote(inv, remote)
+    return changes
+
+
+def apply_remote(inv: dict, remote: dict) -> list[str]:
+    """Bring our copy up to date with PayPal's invoice (from a check or a webhook)."""
+    changes = []
+    status = remote.get("status")
+    if status in PAID:
+        if mark_paid(inv["id"], status):
+            changes.append(f"paid #{inv['number']}")
+        return changes
+    fields = {"viewed": int(bool((remote.get("detail") or {}).get("viewed_by_recipient")))}
+    due = (remote.get("due_amount") or {}).get("value")
+    if due is not None:
+        fields["amount_due"] = float(due)
+        paid_now = round(owed(inv) - float(due), 2)
+        if paid_now > 0:  # a partial payment landed since the last check
+            who = inv["client_name"] or inv["client_email"]
+            db.save_event({"event_type": "UPSTREAM.INVOICE.PARTIAL_PAYMENT",
+                           "resource": {"id": inv["id"]}, "amount": paid_now},
+                          message=f"Payment landed: {who} paid ${paid_now:,.2f} of "
+                                  f"#{inv['number']}; ${float(due):,.2f} is still owed and "
+                                  "will keep being chased.", verified=None)
+            changes.append(f"partial payment #{inv['number']}")
+    if status and status != inv["status"]:
+        fields["status"] = status
+        changes.append(f"#{inv['number']} {status.lower()}")
+    db.update_invoice(inv["id"], **fields)
     return changes
 
 
