@@ -7,27 +7,31 @@ from backend import config, db
 
 router = APIRouter()
 
-# email, who it is, what to look for after logging in. Passwords come from SANDBOX_LOGINS.
+# PayPal sandbox test accounts (play money), shown on the Testing guide tab on purpose.
+# email, password, who it is, what to look for after logging in
 ACCOUNTS = [
-    ("upstream-merchant@business.example.com", "You, the business",
+    ("upstream-merchant@business.example.com", "Upstr3am!Sb1", "You, the business",
      "Invoices sent, payments received and team payouts"),
-    ("acme-client@personal.example.com", "Client: Acme", "Pay an invoice or approve a retainer"),
-    ("globex-client@personal.example.com", "Client: Globex", "Pay an invoice or approve a retainer"),
-    ("maintainer-a@personal.example.com", "Team member A", "Salary received"),
-    ("maintainer-b@personal.example.com", "Team member B", "Salary received"),
-    ("maintainer-c@personal.example.com", "Team member C", "Salary received"),
-    ("city-hospital@business.example.com", "City General Hospital", "Donations received directly"),
-    ("donor-one@personal.example.com", "Donor 1", "Make a donation"),
-    ("donor-two@personal.example.com", "Donor 2", "Make a donation"),
+    ("acme-client@personal.example.com", "Upstr3am!Sb2", "Client: Acme",
+     "Pay an invoice or approve a retainer"),
+    ("globex-client@personal.example.com", "Upstr3am!Sb3", "Client: Globex",
+     "Pay an invoice or approve a retainer"),
+    ("maintainer-a@personal.example.com", "Upstr3am!Sb4", "Team member A", "Salary received"),
+    ("maintainer-b@personal.example.com", "ABCQWERTY", "Team member B", "Salary received"),
+    ("maintainer-c@personal.example.com", "Upstr3am!Sb6", "Team member C", "Salary received"),
+    ("city-hospital@business.example.com", "Upstr3am!Sb7", "City General Hospital",
+     "Donations received directly"),
+    ("donor-one@personal.example.com", "Upstr3am!Sb8", "Donor 1", "Make a donation"),
+    ("donor-two@personal.example.com", "Upstr3am!Sb9", "Donor 2", "Make a donation"),
 ]
 
 
 def logins() -> list[dict]:
-    """Passwords are only ever shown for sandbox accounts."""
+    """Only ever shown when the app runs on the sandbox."""
     if "sandbox" not in config.PAYPAL_BASE:
         return []
-    return [{"email": email, "password": config.SANDBOX_LOGINS[email], "role": role, "check": check}
-            for email, role, check in ACCOUNTS if email in config.SANDBOX_LOGINS]
+    return [{"email": email, "password": password, "role": role, "check": check}
+            for email, password, role, check in ACCOUNTS]
 
 
 def tasks() -> dict[str, bool]:

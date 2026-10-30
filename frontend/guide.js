@@ -16,7 +16,7 @@ async function loadGuide() {
   try {
     const g = await api("/api/guide");
     $("guide-logins").innerHTML = g.logins.length ? g.logins.map(loginRow).join("")
-      : '<li class="muted">The logins haven\'t been added to this server yet.</li>';
+      : '<li class="muted">Logins are only shown in the sandbox.</li>';
     const tasks = [...document.querySelectorAll("[data-task]")];
     tasks.forEach((li) => li.classList.toggle("done", !!g.tasks[li.dataset.task]));
     const done = tasks.filter((li) => li.classList.contains("done")).length;

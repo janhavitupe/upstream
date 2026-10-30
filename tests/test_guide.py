@@ -11,15 +11,12 @@ def _text(pdf: bytes) -> str:
     return PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
 
 
-def test_sandbox_logins_are_shown(client, monkeypatch):
-    monkeypatch.setattr(config, "SANDBOX_LOGINS", {"donor-one@personal.example.com": "pw1"})
+def test_sandbox_logins_are_shown(client):
     logins = client.get("/api/guide").json()["logins"]
-    assert [(a["email"], a["password"], a["role"]) for a in logins] == [
-        ("donor-one@personal.example.com", "pw1", "Donor 1")]
+    assert len(logins) == 9 and all(a["email"] and a["password"] and a["role"] for a in logins)
 
 
 def test_logins_are_never_shown_outside_the_sandbox(client, monkeypatch):
-    monkeypatch.setattr(config, "SANDBOX_LOGINS", {"donor-one@personal.example.com": "pw1"})
     monkeypatch.setattr(config, "PAYPAL_BASE", "https://api-m.paypal.com")
     assert client.get("/api/guide").json()["logins"] == []
 

@@ -55,8 +55,6 @@ DEMO_HOSPITAL_EMAIL = os.getenv("DEMO_HOSPITAL_EMAIL", "")
 DEMO_CLIENTS = dict(pair.split("=", 1) for pair in _list("DEMO_CLIENTS") if "=" in pair) or (
     {"Acme": DEMO_CLIENT_EMAIL} if DEMO_CLIENT_EMAIL else {})
 INVOICE_MAX = float(os.getenv("INVOICE_MAX", "25000"))  # sanity cap on one chat-made invoice
-# Sandbox logins shown on the Guide tab: "email=password,email=password". Never commit these.
-SANDBOX_LOGINS = dict(pair.split("=", 1) for pair in _list("SANDBOX_LOGINS") if "=" in pair)
 
 # Optional email for retainer heads-ups (e.g. Gmail: smtp.gmail.com, 587, an app password).
 # Without it, heads-ups are ready on the dashboard for you to send.
