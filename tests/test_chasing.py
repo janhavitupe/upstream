@@ -58,6 +58,17 @@ def test_next_reminder_is_tomorrow_once_today_is_sent(reminders):
     assert chasing.next_step(db.get_invoice("I1")) == ("firm", date.today() + timedelta(days=8))
 
 
+def test_turning_the_demo_clock_back_does_not_stall_chasing(reminders):
+    _invoice(due_in=0, term=2)
+    _clock(40); chasing.chase_due()                       # final reminder at 40 days overdue
+    _clock(22)                                            # then back: that day is now the future
+    assert chasing.next_step(db.get_invoice("I1")) == ("final", date.today() + timedelta(days=22))
+    chasing.chase_due(); chasing.chase_due()              # today's goes out, once
+    assert len(reminders) == 2
+    assert db.get_invoice("I1")["final_day"] == (date.today() + timedelta(days=22)).isoformat()
+    assert chasing.next_step(db.get_invoice("I1"))[1] == date.today() + timedelta(days=23)
+
+
 def test_short_deadlines_are_urgent_from_day_one_then_final(reminders):
     _invoice(due_in=0, term=2)                           # "due in 2 days"
     assert chasing.next_step(db.get_invoice("I1"))[0] == "urgent"

@@ -50,6 +50,12 @@ def days_overdue(inv: dict) -> int:
     return (today() - date.fromisoformat(inv["due_date"])).days
 
 
+def _past_day(inv: dict, field: str) -> date | None:
+    """A day stored on the invoice, ignored if it's after today: the demo clock was turned back."""
+    day = date.fromisoformat(inv[field]) if inv.get(field) else None
+    return day if day and day <= today() else None
+
+
 def stages_for(inv: dict) -> list[tuple[int, str, str]]:
     """The reminder ladder for this invoice: faster and more urgent for short deadlines."""
     term = (date.fromisoformat(inv["due_date"]) - date.fromisoformat(inv["created_at"][:10])).days
@@ -200,8 +206,9 @@ def next_step(inv: dict) -> tuple[str, date]:
     """The next reminder this invoice will get: (tone, on which day)."""
     due = date.fromisoformat(inv["due_date"])
     on = max(due + timedelta(days=stages_for(inv)[0][0]), today())
-    if inv.get("last_reminder_day"):
-        on = max(on, date.fromisoformat(inv["last_reminder_day"]) + timedelta(days=1))
+    last = _past_day(inv, "last_reminder_day")
+    if last:
+        on = max(on, last + timedelta(days=1))
     return stage_on(inv, (on - due).days)[1], on
 
 
@@ -221,7 +228,7 @@ def chase_due() -> list[str]:
             continue
         # One reminder a day, in today's tone. Days that were missed (the app was asleep, or
         # the demo clock jumped) are skipped, never sent back to back
-        if inv.get("last_reminder_day") and date.fromisoformat(inv["last_reminder_day"]) >= now_day:
+        if _past_day(inv, "last_reminder_day") == now_day:
             continue
         _, tone, subject = stage_on(inv, overdue)
         stage = inv["chase_stage"]
@@ -233,7 +240,7 @@ def chase_due() -> list[str]:
             continue
         fields = {"chase_stage": stage + 1, "last_reminder_at": db.now(),
                   "last_reminder_day": now_day.isoformat()}
-        if tone == "final" and not inv.get("final_day"):
+        if tone == "final" and not _past_day(inv, "final_day"):
             fields["final_day"] = now_day.isoformat()
         db.update_invoice(inv["id"], **fields)
         who = inv["client_name"] or inv["client_email"]
@@ -250,9 +257,10 @@ def flag_needs_you() -> list[str]:
     """A week after the final notice, hand the invoice to the owner too (once)."""
     flagged = []
     for inv in db.list_invoices(OPEN):
-        if inv["needs_you_at"] or not inv["final_day"]:
+        final = _past_day(inv, "final_day")
+        if inv["needs_you_at"] or not final:
             continue
-        if (today() - date.fromisoformat(inv["final_day"])).days < NEEDS_YOU_AFTER_DAYS:
+        if (today() - final).days < NEEDS_YOU_AFTER_DAYS:
             continue
         db.update_invoice(inv["id"], needs_you_at=db.now())
         who = inv["client_name"] or inv["client_email"]
