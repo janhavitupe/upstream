@@ -13,7 +13,7 @@ def _soon(days=14):
 
 
 def _bill(fake_paypal, client="Acme", amount=300, due=None, term=30):
-    """term: pretend it was sent this many days before it's due (short terms chase urgently)."""
+    """term: pretend it was sent this many days before it's due."""
     inv = billing.create_invoice(client, [{"name": "Work", "unit_price": amount}],
                                  due_date=due or _soon())
     sent = date.fromisoformat(inv["due_date"]) - timedelta(days=term)
@@ -138,7 +138,7 @@ def test_invoice_view_and_undo(client, fake_paypal, demo_day):
     demo_day(3)
     row = client.get("/api/getpaid/invoices").json()[0]
     assert row["days_overdue"] == 2 and row["chasing"] == "on"
-    assert row["next_reminder"]["tone"] == "friendly" and row["owed"] == 300
+    assert row["next_reminder"]["tone"] == "firm" and row["owed"] == 300
     db.set_client_chase("Acme", True)
     assert client.get("/api/getpaid/invoices").json()[0]["chasing"] == "off for this client"
     assert client.post(f"/api/getpaid/invoices/{inv['id']}/cancel").json()["status"] == "CANCELLED"
@@ -191,7 +191,7 @@ def test_invoice_webhooks(client, fake_paypal):
 def _overdue_needing_you(fake_paypal, demo_day):
     inv = _bill(fake_paypal, due=_soon(0))
     demo_day(22); chasing.chase_due()
-    demo_day(29); chasing.chase_due()
+    demo_day(31); chasing.chase_due()
     return inv
 
 

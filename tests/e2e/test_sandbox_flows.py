@@ -61,8 +61,10 @@ def test_invoice_paid_is_detected_and_stops_chasing():
 def test_overdue_invoice_gets_one_real_reminder():
     inv = billing.create_invoice("Acme", [{"name": "E2E reminder", "unit_price": 3}], due_date=_soon(1))
     try:
+        db.update_invoice(inv["id"], created_at="2020-01-01T09:00:00+00:00")
+        assert chasing.chase_due() == [f"friendly reminder #{inv['number']}"]  # before it's due
         db.set_setting("demo_offset_days", 2)
-        assert chasing.chase_due() == [f"friendly reminder #{inv['number']}"]
+        assert chasing.chase_due() == [f"firm reminder #{inv['number']}"]
         assert chasing.chase_due() == []
         db.set_setting("demo_offset_days", 30)              # jumps straight to the final notice
         assert chasing.chase_due() == [f"final reminder #{inv['number']}"]
