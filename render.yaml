@@ -39,3 +39,5 @@ services:
         value: city-hospital@business.example.com
       - key: DEMO_CLIENTS
         value: Acme=acme-client@personal.example.com,Globex=globex-client@personal.example.com
+      - key: SANDBOX_LOGINS      # shown on the Testing guide tab
+        sync: false

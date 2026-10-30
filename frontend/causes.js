@@ -40,6 +40,15 @@ async function loadCauses() {
   } catch { /* keep the last view */ }
 }
 
+$("cause-example").addEventListener("click", () => {
+  const f = $("cause-form").elements;
+  f.title.value = "Help Sam with an emergency surgery bill";
+  f.story.value = "Sam needed emergency surgery and the hospital bill is more than the family can pay.";
+  f.patient_name.value = "Sam Lee";
+  f.provider_name.value = "City General Hospital";
+  f.goal.value = 5000;
+});
+
 $("cause-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;

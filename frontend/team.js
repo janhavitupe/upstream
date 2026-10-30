@@ -23,6 +23,7 @@ function showTab(name) {
   if (name === "team") loadSchedules();
   if (name === "causes" && typeof loadCauses === "function") loadCauses();
   if (name === "getpaid" && typeof loadInvoices === "function") loadInvoices();
+  if (name === "guide" && typeof loadGuide === "function") loadGuide();
 }
 
 document.querySelectorAll(".tab").forEach((b) =>
@@ -374,4 +375,4 @@ setInterval(() => { if (!$("tab-team").hidden) refreshSoon(); }, 15000);
 let minEditMinutes = 5;
 api("/health").then((h) => { minEditMinutes = h.payroll_min_edit_minutes ?? 5; }).catch(() => {});
 
-showTab(["#getpaid", "#causes"].includes(location.hash) ? location.hash.slice(1) : "team");
+showTab(["#getpaid", "#causes", "#guide"].includes(location.hash) ? location.hash.slice(1) : "team");

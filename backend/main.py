@@ -18,6 +18,7 @@ from backend.paypal import invoices, orders
 from backend.paypal.client import PayPalError
 from backend import causes_api
 from backend.getpaid_api import router as getpaid_router
+from backend.guide import router as guide_router
 from backend.payroll_api import router as payroll_router
 from backend.retainer_portal import router as portal_router
 from backend.webhooks import router as webhook_router
@@ -44,6 +45,7 @@ app.include_router(payroll_router)
 app.include_router(getpaid_router)
 app.include_router(portal_router)
 app.include_router(causes_api.router)
+app.include_router(guide_router)
 FRONTEND = config.ROOT / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 

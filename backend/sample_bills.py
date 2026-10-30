@@ -1,13 +1,9 @@
-"""
-Make sample hospital bills (text PDFs) for demoing Verified causes.
+"""Sample hospital bills (text PDFs) for trying Verified causes, offered on the Guide and causes tabs.
 
-    python scripts/make_demo_bills.py
+  real()  matches the campaign below: every check passes
+  fake()  someone else's, smaller bill: the patient and amount checks fail
 
-Writes to data/demo-bills/ (not committed):
-  real-bill.pdf   matches the campaign below: every check passes
-  fake-bill.pdf   someone else's, smaller bill: the patient and amount checks fail
-
-Each run uses a new bill number, so a fresh file never trips "bill not used before".
+Each one gets a new bill number, so a fresh copy never trips "bill not used before".
 Campaign to type in the form:
   Patient: Sam Lee · Hospital: City General Hospital · Amount needed: 5000
 """
@@ -15,9 +11,6 @@ from __future__ import annotations
 
 import secrets
 from datetime import date
-from pathlib import Path
-
-OUT = Path(__file__).resolve().parent.parent / "data" / "demo-bills"
 
 
 def pdf(lines: list[tuple[int, str]]) -> bytes:
@@ -63,16 +56,12 @@ def bill(hospital: str, patient: str, items: list[tuple[str, float]]) -> bytes:
     return pdf(lines)
 
 
-def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "real-bill.pdf").write_bytes(bill("City General Hospital", "Sam Lee", [
+def real() -> bytes:
+    return bill("City General Hospital", "Sam Lee", [
         ("Emergency room visit", 850.00), ("Appendectomy (surgery)", 2400.00),
-        ("Anesthesia", 600.00), ("Hospital stay, 2 nights", 1100.00), ("Medication", 150.00)]))
-    (OUT / "fake-bill.pdf").write_bytes(bill("City General Hospital", "Jordan Park", [
-        ("Outpatient consultation", 300.00), ("Blood tests", 180.00), ("X-ray", 220.00)]))
-    print(f"Wrote {OUT / 'real-bill.pdf'} and {OUT / 'fake-bill.pdf'}")
-    print("Form: patient 'Sam Lee', hospital 'City General Hospital', amount needed 5000")
+        ("Anesthesia", 600.00), ("Hospital stay, 2 nights", 1100.00), ("Medication", 150.00)])
 
 
-if __name__ == "__main__":
-    main()
+def fake() -> bytes:
+    return bill("City General Hospital", "Jordan Park", [
+        ("Outpatient consultation", 300.00), ("Blood tests", 180.00), ("X-ray", 220.00)])

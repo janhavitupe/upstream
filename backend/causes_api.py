@@ -4,11 +4,13 @@ from __future__ import annotations
 from html import escape
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from backend import causes, config, db
+from backend import causes, config, db, sample_bills
 
 router = APIRouter()
+
+SAMPLE_BILLS = {"real": sample_bills.real, "fake": sample_bills.fake}
 
 
 def _mime(upload: UploadFile) -> str:
@@ -33,6 +35,15 @@ async def create_campaign(title: str = Form(...), story: str = Form(...),
                              await bill.read(), _mime(bill))
     except causes.CauseError as e:
         raise HTTPException(400, str(e))
+
+
+@router.get("/api/causes/sample-bill/{kind}", tags=["4 · Verified causes"])
+def sample_bill(kind: str):
+    """A fresh sample bill for testers: "real" passes every check, "fake" doesn't."""
+    if kind not in SAMPLE_BILLS:
+        raise HTTPException(404, "There are only real and fake sample bills.")
+    return Response(SAMPLE_BILLS[kind](), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{kind}-bill.pdf"'})
 
 
 @router.get("/api/causes", tags=["4 · Verified causes"])

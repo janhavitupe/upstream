@@ -137,7 +137,7 @@ def test_basic_invoice_routes(client, fake_paypal):
 # ---------- the frontend ----------
 
 @pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
-@pytest.mark.parametrize("script", ["app.js", "team.js", "getpaid.js"])
+@pytest.mark.parametrize("script", ["app.js", "team.js", "getpaid.js", "causes.js", "guide.js"])
 def test_frontend_javascript_has_no_syntax_errors(script):
     r = subprocess.run(["node", "--check", str(ROOT / "frontend" / script)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr

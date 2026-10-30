@@ -25,7 +25,111 @@
       <button class="tab active" role="tab" data-tab="team" aria-selected="true">Pay your team</button>
       <button class="tab" role="tab" data-tab="getpaid" aria-selected="false">Get paid</button>
       <button class="tab" role="tab" data-tab="causes" aria-selected="false">Verified causes</button>
+      <button class="tab" role="tab" data-tab="guide" aria-selected="false">Testing guide</button>
     </nav>
+    <div id="tab-guide" hidden>
+      <section class="card">
+        <div class="result-head">
+          <div>
+            <h2>Test Upstream yourself</h2>
+            <p class="muted">Follow the steps for each feature, then log in to the PayPal accounts
+              below to see the result for yourself. Everything runs on PayPal's sandbox, so no real
+              money moves.</p>
+          </div>
+          <span class="status" id="guide-count"></span>
+        </div>
+        <div class="progress-bar"><span id="guide-bar" style="width:0%"></span></div>
+        <p class="muted small">The ticks are live: they come from what has actually happened in this
+          app, so everyone testing it shares them. The app sleeps when idle, so the first page can
+          take about a minute to load.</p>
+      </section>
+
+      <section class="card">
+        <h2>Sandbox accounts</h2>
+        <p class="muted small">Log in at <a href="https://www.sandbox.paypal.com/signin"
+          target="_blank" rel="noopener">sandbox.paypal.com</a>. These are test accounts with play
+          money. Please don't change their passwords or settings.</p>
+        <ul class="list" id="guide-logins"><li class="muted">Loading…</li></ul>
+      </section>
+
+      <section class="card">
+        <h2>1. Pay your team</h2>
+        <p class="muted small">Pays a repo's top contributors by the work they did. You can check
+          and edit every payday before it goes out.</p>
+        <ol class="guide-steps">
+          <li>Open <button class="link" type="button" data-goto="team">Pay your team</button> and
+            keep the example repo and login.</li>
+          <li>Set <b>Pay</b> to <b>Every day</b> and <b>At</b> to about 10 minutes from now, then
+            click <b>Preview split</b>.</li>
+          <li>Read the split, tick the approval box and click <b>Start payroll</b>.</li>
+          <li>When the payday preview appears under <b>Your payroll schedules</b>, change an amount
+            and click <b>Save changes</b>. This shows the edit step works.</li>
+          <li>Tick the pay-now box and click <b>Pay now</b>, or wait for the countdown to pay it
+            automatically.</li>
+        </ol>
+        <h3 class="guide-confirm">Confirm it worked</h3>
+        <ul class="guide-tasks">
+          <li data-task="payroll_started">A payroll schedule is running.</li>
+          <li data-task="payroll_paid">A payday was paid. Log in as Team member A, B or C to see the
+            money arrive.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>2. Get paid</h2>
+        <p class="muted small">Bills clients from a chat message, chases unpaid invoices and runs
+          monthly retainers.</p>
+        <ol class="guide-steps">
+          <li>Open <button class="link" type="button" data-goto="getpaid">Get paid</button> and
+            click the suggestion <b>Bill Acme $500 for the API integration, due in 14 days</b>.</li>
+          <li>Click <b>+1 day</b> on the Demo clock. A friendly reminder appears under
+            <b>Chasing &amp; payments</b>. Keep clicking to watch the reminders get stricter after
+            the due date, then click <b>Reset</b>.</li>
+          <li>Click <b>Client's pay page</b> on the invoice, log in as Client: Acme and pay.</li>
+          <li>Under <b>Your writing style</b>, paste a message you've written, click
+            <b>Preview</b> and compare the two versions, then click <b>Save style</b>.</li>
+          <li>Click the suggestion <b>Set up a retainer for Acme, $300/month for API
+            maintenance</b>, open the <b>Approval link</b> and approve it as Client: Acme.</li>
+        </ol>
+        <h3 class="guide-confirm">Confirm it worked</h3>
+        <ul class="guide-tasks">
+          <li data-task="invoice_sent">An invoice was sent through PayPal.</li>
+          <li data-task="reminder_sent">A reminder was sent automatically.</li>
+          <li data-task="invoice_paid">An invoice was paid and marked Paid ✅, usually within a
+            minute. Chasing stops, and the money shows on the business account.</li>
+          <li data-task="voice_saved">A writing style was saved.</li>
+          <li data-task="retainer_created">A retainer was created.</li>
+          <li data-task="retainer_active">A client approved a retainer and it's active.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>3. Verified causes</h2>
+        <p class="muted small">Blocks fundraising until a medical bill proves the claim, then pays
+          donations directly to the hospital.</p>
+        <div class="btn-row">
+          <a class="btn" href="/api/causes/sample-bill/fake" download>Download fake bill</a>
+          <a class="btn" href="/api/causes/sample-bill/real" download>Download real bill</a>
+        </div>
+        <ol class="guide-steps">
+          <li>Open <button class="link" type="button" data-goto="causes">Verified causes</button>
+            and click <b>Fill in the example</b>.</li>
+          <li>Choose the fake bill and click <b>Check the bill and create</b>. It's rejected
+            because the patient is wrong and the bill is smaller than the amount asked for.</li>
+          <li>On that campaign, click <b>Upload a corrected bill</b> and choose the real bill. All
+            the checks pass and donations open.</li>
+          <li>Open the <b>Public page</b>, click <b>Donate with PayPal</b> and log in as Donor 1.</li>
+        </ol>
+        <h3 class="guide-confirm">Confirm it worked</h3>
+        <ul class="guide-tasks">
+          <li data-task="bill_blocked">A bad bill was blocked, and its campaign can't take
+            donations.</li>
+          <li data-task="bill_verified">A good bill was verified.</li>
+          <li data-task="donation_paid">A donation was paid. Log in as City General Hospital to see
+            that the money went straight there.</li>
+        </ul>
+      </section>
+    </div>
     <div id="tab-getpaid" hidden>
       <div class="getpaid">
         <section class="card chat-card">
@@ -119,6 +223,16 @@
         <p class="muted">Raise money for someone's medical bill. Upload the bill: an AI reads it and
           Upstream checks it against what you enter. Only verified campaigns take donations, and every
           donation goes straight to the hospital's PayPal account.</p>
+        <div class="sample-bills">
+          <div><b>Try it with a sample bill</b>
+            <div class="muted small">The real bill passes every check. The fake one fails because
+              it's for another patient and a smaller amount. Each download is a new bill.</div></div>
+          <div class="btn-row">
+            <a class="btn ghost" href="/api/causes/sample-bill/real" download>Real bill</a>
+            <a class="btn ghost" href="/api/causes/sample-bill/fake" download>Fake bill</a>
+            <button class="btn ghost" id="cause-example" type="button">Fill in the example</button>
+          </div>
+        </div>
         <form id="cause-form" class="causes-form">
           <label class="field full"><span>Campaign title</span>
             <input name="title" required maxlength="120" placeholder="Help Sam with an emergency surgery bill"></label>
@@ -221,6 +335,7 @@
   <script src="/static/app.js"></script>
   <script src="/static/getpaid.js"></script>
   <script src="/static/causes.js"></script>
+  <script src="/static/guide.js"></script>
   <script src="/static/team.js"></script>
 </body>
 </html>

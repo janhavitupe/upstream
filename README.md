@@ -19,6 +19,8 @@ All four modules work end to end from the dashboard at `/`.
 | 4. Pay the bill, not the person | 4 | **Done.** Upload a hospital bill (photo or PDF): a vision AI reads it, then **code** checks 7 things (it's a medical bill, hospital and patient match, goal ≤ bill total, recent, line items add up, bill not reused). Only verified campaigns take donations; PayPal Orders pays the hospital directly (payee = hospital), capped at what's still needed. Public page `/c/{code}` shows the checks with the patient as initials | Provider identity verification (e.g. checking the hospital's PayPal is genuinely the hospital) |
 | Webhooks + storage | all | Receiver + signature verification. SQLite locally; **PostgreSQL** (e.g. free Neon) when `DATABASE_URL` is set, so data survives deploys ([docs/database.md](docs/database.md)). The whole test suite passes on both | |
 
+**Testing guide tab:** step-by-step tests for every feature, live ticks showing which tasks have been done, sample real and fake bills, and the sandbox logins. Logins are never committed: set `SANDBOX_LOGINS` (`email=password,email=password`) in `.env` and on the host. They are only shown when `PAYPAL_BASE` is the sandbox.
+
 ## Run it (VS Code)
 
 1. Open this folder in VS Code and install the **Python** extension if prompted.

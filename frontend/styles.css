@@ -343,6 +343,7 @@ a { color: var(--accent); }
 .donate-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px; }
 .causes-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .causes-form .full { grid-column: 1 / -1; }
+.causes-form .field input { width: 100%; }
 .causes-form textarea, .causes-form input[type=file] { font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; }
 .campaign { display: block !important; padding: 14px 0; }
@@ -389,10 +390,30 @@ pre.trail { white-space: pre-wrap; font-size: 12px; background: var(--surface); 
 .two-col .card { margin: 0; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
+.sample-bills { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--border); background: var(--bg); }
+.sample-bills .btn-row { margin-top: 0; }
+a.btn { display: inline-block; text-decoration: none; }
+.guide-steps { margin: 12px 0 0; padding-left: 22px; }
+.guide-steps li { padding: 4px 0; }
+.guide-steps button.link { font: inherit; font-weight: 600; background: none; border: 0; padding: 0;
+  color: var(--accent); cursor: pointer; }
+.guide-confirm { margin: 16px 0 4px; font-size: 14px; }
+.guide-tasks { list-style: none; margin: 0; padding: 0; }
+.guide-tasks li { padding: 4px 0 4px 26px; position: relative; }
+.guide-tasks li::before { content: "○"; position: absolute; left: 4px; color: var(--muted); }
+.guide-tasks li.done::before { content: "✅"; left: 0; }
+#guide-logins li.login { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 12px; align-items: center; }
+.login-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.login-value code { overflow-wrap: anywhere; font-size: 13px; }
+.login-value .btn { padding: 3px 10px; font-size: 13px; }
+
 footer { padding-top: 8px; padding-bottom: 32px; }
 
 @media (max-width: 720px) {
   .getpaid { grid-template-columns: 1fr; }
+  #guide-logins li.login { grid-template-columns: 1fr; gap: 6px; }
   .voice-compare { grid-template-columns: 1fr; }
   .msg { max-width: 92%; }
   .grid { display: none; }
